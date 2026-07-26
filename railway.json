@@ -7,9 +7,6 @@
   "deploy": {
     "startCommand": "node --enable-source-maps artifacts/api-server/dist/index.mjs",
     "healthcheckPath": "/api/healthz",
-    "healthcheckTimeout": 300,
-    "env": {
-      "PHONE_NUMBER": "201044568121"
-    }
+    "healthcheckTimeout": 300
   }
 }
