@@ -12,26 +12,18 @@
   "steps": {
     "install": {
       "commands": [
-        {
-          "cmd": "corepack enable && pnpm install --frozen-lockfile",
-          "customName": "Install dependencies with pnpm"
-        },
-        {
-          "path": "/app/node_modules/.bin"
-        }
+        "corepack enable && pnpm install --frozen-lockfile"
       ]
     },
     "build": {
       "inputs": [
         {
-          "step": "install"
+          "step": "install",
+          "include": ["."]
         }
       ],
       "commands": [
-        {
-          "cmd": "pnpm --filter @workspace/api-server run build",
-          "customName": "Build api-server with esbuild"
-        }
+        "pnpm --filter @workspace/api-server run build"
       ]
     }
   },
