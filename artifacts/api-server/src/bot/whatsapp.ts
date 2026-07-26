@@ -10,10 +10,13 @@ import { Boom } from "@hapi/boom";
 import path from "node:path";
 import pino from "pino";
 import { logger } from "../lib/logger";
-import { convertToSticker } from "./image";
+import { convertToSticker, MAX_CAPTION_LENGTH } from "./image";
 import { getSetting } from "./settings";
 
 const SESSIONS_DIR = path.resolve(process.cwd(), "sessions");
+
+// How long to wait after the last received image before prompting for caption (ms)
+const IMAGE_BATCH_DEBOUNCE_MS = 3000;
 
 // Silent pino logger for baileys internals
 const baileysLogger = pino({ level: "silent" });
@@ -23,8 +26,26 @@ let _status: "disconnected" | "connecting" | "connected" = "disconnected";
 let _linkingCode: string | null = null;
 let _linkedPhone: string | null = null;
 
-// Track in-flight image processing to avoid duplicates
+// ─── Per-JID state ──────────────────────────────────────────────────────────
+
+/** Images collected during the current batch, waiting for caption prompt */
+interface PendingBatch {
+  messages: WAMessage[];
+  timer: ReturnType<typeof setTimeout>;
+}
+
+/** Images already prompted and waiting for the user to send a caption text */
+interface AwaitingCaption {
+  messages: WAMessage[];
+}
+
+const pendingBatches = new Map<string, PendingBatch>();
+const awaitingCaption = new Map<string, AwaitingCaption>();
+
+// Track in-flight processing to avoid duplicate deliveries
 const processingSet = new Set<string>();
+
+// ─── Public API ─────────────────────────────────────────────────────────────
 
 export function getBotStatus() {
   return {
@@ -34,83 +55,188 @@ export function getBotStatus() {
   };
 }
 
-async function replyText(msg: WAMessage, text: string): Promise<void> {
-  if (!sock || !msg.key.remoteJid) return;
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+async function sendText(jid: string, text: string, quotedMsg?: WAMessage): Promise<void> {
+  if (!sock) return;
   try {
-    await sock.sendMessage(msg.key.remoteJid, { text }, { quoted: msg });
+    if (quotedMsg) {
+      await sock.sendMessage(jid, { text }, { quoted: quotedMsg });
+    } else {
+      await sock.sendMessage(jid, { text });
+    }
   } catch (err) {
-    logger.warn({ err }, "Failed to send reply text");
+    logger.warn({ err }, "Failed to send text message");
   }
 }
 
-async function processImageMessage(msg: WAMessage): Promise<void> {
-  if (!sock) return;
-  const jid = msg.key.remoteJid!;
+/** Download + convert one image, return the sticker buffer (or null on failure). */
+async function downloadAndConvert(
+  msg: WAMessage,
+  caption: string
+): Promise<Buffer | null> {
   const msgId = msg.key.id!;
-
-  if (processingSet.has(msgId)) return;
+  if (processingSet.has(msgId)) return null;
   processingSet.add(msgId);
-
   try {
-    logger.info({ jid, msgId }, "Processing image");
-
-    // Download image
     const imageBuffer = (await downloadMediaMessage(
       msg,
       "buffer",
       {},
-      { logger: baileysLogger, reuploadRequest: sock.updateMediaMessage }
+      { logger: baileysLogger, reuploadRequest: sock!.updateMediaMessage }
     )) as Buffer;
 
     if (!imageBuffer || imageBuffer.length === 0) {
-      await replyText(msg, "❌ فشل تحميل الصورة، حاول مرة أخرى.");
-      return;
+      logger.warn({ msgId }, "Empty image buffer — skipping");
+      return null;
     }
 
-    // Convert to sticker WebP
-    const stickerBuffer = await convertToSticker(imageBuffer);
-
-    // Send sticker
-    await sock.sendMessage(jid, { sticker: stickerBuffer });
-    logger.info({ jid, msgId, sizeKB: Math.round(stickerBuffer.length / 1024) }, "✅ Sticker sent");
+    return await convertToSticker(imageBuffer, caption);
   } catch (err) {
-    logger.error({ err, jid, msgId }, "Error processing image");
-    try {
-      await replyText(msg, "❌ حدث خطأ أثناء التحويل.");
-    } catch {
-      // ignore
-    }
+    logger.error({ err, msgId }, "Error converting image to sticker");
+    return null;
   } finally {
     processingSet.delete(msgId);
   }
 }
 
-async function handleIncomingMessages(messages: WAMessage[]): Promise<void> {
-  // Only process messages not sent by us
-  const incoming = messages.filter(
-    (m) => !m.key.fromMe && m.message
+// ─── Core flows ──────────────────────────────────────────────────────────────
+
+/**
+ * Called when the debounce timer fires after a batch of images.
+ * Moves the batch to "awaiting caption" state and prompts the user.
+ */
+async function onBatchComplete(jid: string): Promise<void> {
+  const batch = pendingBatches.get(jid);
+  if (!batch) return;
+  pendingBatches.delete(jid);
+
+  const count = batch.messages.length;
+  awaitingCaption.set(jid, { messages: batch.messages });
+
+  logger.info({ jid, count }, "Batch complete — prompting for caption");
+
+  await sendText(
+    jid,
+    `📷 تم استلام ${count} ${count === 1 ? "صورة" : "صورة"} بنجاح.\n\n` +
+      `✍️ الآن أرسل الوصف الذي تريد إضافته أسفل ${count === 1 ? "الملصق" : "جميع الملصقات"}.\n\n` +
+      `يدعم:\n` +
+      `✅ النصوص الطويلة\n` +
+      `✅ العربية والإنجليزية\n` +
+      `✅ الإيموجي\n` +
+      `✅ الأسطر المتعددة\n` +
+      `✅ الروابط وأرقام الهواتف`
+  );
+}
+
+/**
+ * Called when the user sends a text message while we're awaiting a caption.
+ * Processes all pending images and sends the stickers.
+ */
+async function onCaptionReceived(jid: string, captionRaw: string): Promise<void> {
+  const session = awaitingCaption.get(jid);
+  if (!session) return;
+  awaitingCaption.delete(jid);
+
+  // Trim and enforce reasonable length for embedding in sticker image
+  let caption = captionRaw.trim();
+  let truncated = false;
+  if (caption.length > MAX_CAPTION_LENGTH) {
+    caption = caption.slice(0, MAX_CAPTION_LENGTH);
+    truncated = true;
+  }
+
+  const count = session.messages.length;
+
+  if (truncated) {
+    await sendText(
+      jid,
+      `⚠️ الوصف طويل جداً — سيتم استخدام أول ${MAX_CAPTION_LENGTH} حرف فقط.`
+    );
+  }
+
+  await sendText(
+    jid,
+    `⏳ جاري تحويل ${count} ${count === 1 ? "صورة" : "صورة"} بالوصف المختار...`
   );
 
-  const imageMessages = incoming.filter(
-    (m) => m.message?.imageMessage != null
+  logger.info({ jid, count, captionLength: caption.length }, "Processing batch with caption");
+
+  // Convert all images in parallel
+  const results = await Promise.allSettled(
+    session.messages.map((msg) => downloadAndConvert(msg, caption))
   );
 
-  if (imageMessages.length === 0) return;
+  let sent = 0;
+  let failed = 0;
 
-  // Notify if batch > 1
-  if (imageMessages.length > 1 && imageMessages[0].key.remoteJid) {
-    try {
-      await sock?.sendMessage(imageMessages[0].key.remoteJid, {
-        text: `⏳ جاري تحويل ${imageMessages.length} صورة إلى ملصقات...`,
-      });
-    } catch {
-      // ignore
+  for (const result of results) {
+    if (result.status === "fulfilled" && result.value) {
+      try {
+        await sock!.sendMessage(jid, { sticker: result.value });
+        sent++;
+        logger.info({ jid, sizeKB: Math.round(result.value.length / 1024) }, "✅ Sticker sent");
+      } catch (err) {
+        logger.error({ err, jid }, "Failed to send sticker");
+        failed++;
+      }
+    } else {
+      failed++;
     }
   }
 
-  // Process all images in parallel
-  await Promise.allSettled(imageMessages.map(processImageMessage));
+  // Summary only when batch > 1 or there were failures
+  if (count > 1 || failed > 0) {
+    const parts: string[] = [];
+    if (sent > 0) parts.push(`✅ تم إرسال ${sent} ملصق`);
+    if (failed > 0) parts.push(`❌ فشل ${failed} ملصق`);
+    await sendText(jid, parts.join(" — "));
+  }
 }
+
+// ─── Incoming message handler ────────────────────────────────────────────────
+
+async function handleIncomingMessages(messages: WAMessage[]): Promise<void> {
+  // Only process messages not sent by us
+  const incoming = messages.filter((m) => !m.key.fromMe && m.message);
+
+  for (const msg of incoming) {
+    const jid = msg.key.remoteJid;
+    if (!jid) continue;
+
+    const msgContent = msg.message;
+    if (!msgContent) continue;
+
+    const isImage = msgContent.imageMessage != null;
+    const textBody =
+      msgContent.conversation ??
+      msgContent.extendedTextMessage?.text ??
+      null;
+
+    if (isImage) {
+      // ── Image: add to pending batch, reset debounce timer ──
+      if (pendingBatches.has(jid)) {
+        // Extend existing batch
+        const batch = pendingBatches.get(jid)!;
+        clearTimeout(batch.timer);
+        batch.messages.push(msg);
+        batch.timer = setTimeout(() => onBatchComplete(jid), IMAGE_BATCH_DEBOUNCE_MS);
+      } else {
+        // Start new batch
+        const timer = setTimeout(() => onBatchComplete(jid), IMAGE_BATCH_DEBOUNCE_MS);
+        pendingBatches.set(jid, { messages: [msg], timer });
+      }
+    } else if (textBody !== null && textBody.trim().length > 0) {
+      // ── Text: check if we're waiting for a caption ──
+      if (awaitingCaption.has(jid)) {
+        await onCaptionReceived(jid, textBody);
+      }
+      // Otherwise ignore — bot is image-only
+    }
+  }
+}
+
+// ─── Connection management ───────────────────────────────────────────────────
 
 async function startConnection(): Promise<void> {
   const { state, saveCreds } = await useMultiFileAuthState(SESSIONS_DIR);
@@ -127,12 +253,10 @@ async function startConnection(): Promise<void> {
     connectTimeoutMs: 60_000,
     retryRequestDelayMs: 2000,
     maxMsgRetryCount: 3,
-    // Don't mark messages as read automatically
     markOnlineOnConnect: false,
   });
 
   // Request pairing code if not yet registered
-  // Needs a short delay for the WebSocket to connect to WhatsApp servers
   if (!state.creds.registered) {
     setTimeout(async () => {
       try {
@@ -164,6 +288,11 @@ async function startConnection(): Promise<void> {
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
       _status = "disconnected";
       _linkingCode = null;
+
+      // Clear any in-memory state on disconnect
+      pendingBatches.forEach((b) => clearTimeout(b.timer));
+      pendingBatches.clear();
+      awaitingCaption.clear();
 
       logger.warn({ statusCode, shouldReconnect }, "Connection closed");
 
@@ -202,4 +331,7 @@ export async function stopBot(): Promise<void> {
   }
   _status = "disconnected";
   _linkingCode = null;
+  pendingBatches.forEach((b) => clearTimeout(b.timer));
+  pendingBatches.clear();
+  awaitingCaption.clear();
 }
