@@ -1,6 +1,5 @@
 # ============================================================================
-# Docker / Railway Build Ignores
-# Prevents unnecessary files from being sent to the build context
+# Railway build context ignores — keeps the build image lean
 # ============================================================================
 
 .git
@@ -16,27 +15,6 @@ dist
 tmp
 out-tsc
 *.tsbuildinfo
-
-.expo
-.expo-shared
-
-.cursor
-.github
-
-artifacts/sticker-bot-dashboard
-artifacts/mockup-sandbox
-
-lib/api-client-react
-lib/api-spec
-lib/api-zod
-
-scripts
-
-# WhatsApp session credentials — sensitive, never ship in image
-artifacts/api-server/sessions/
-
-# Local SQLite databases — not shipped; Railway uses persistent volumes
-artifacts/api-server/data/*.db
 
 # OS files
 .DS_Store

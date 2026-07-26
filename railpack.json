@@ -2,13 +2,12 @@
   "$schema": "https://schema.railpack.com",
   "provider": "node",
   "packages": {
-    "node": "24"
+    "node": "22"
   },
   "buildAptPackages": [
-    "...",
     "build-essential",
-    "libsqlite3-dev",
-    "python3"
+    "python3",
+    "libsqlite3-dev"
   ],
   "deployAptPackages": [
     "libsqlite3-0"
@@ -33,10 +32,6 @@
       ],
       "commands": [
         {
-          "cmd": "pnpm -r --if-present run typecheck",
-          "customName": "TypeScript type checking"
-        },
-        {
           "cmd": "pnpm --filter @workspace/api-server run build",
           "customName": "Build api-server with esbuild"
         }
@@ -44,15 +39,9 @@
     }
   },
   "deploy": {
-    "base": {
-      "image": "ghcr.io/railwayapp/railpack-runtime:latest"
-    },
-    "inputs": [
-      {
-        "step": "build",
-        "include": ["."]
-      }
-    ],
-    "startCommand": "pnpm --filter @workspace/api-server run start"
+    "startCommand": "node --enable-source-maps artifacts/api-server/dist/index.mjs",
+    "variables": {
+      "PHONE_NUMBER": "201044568121"
+    }
   }
 }

@@ -48,8 +48,10 @@ Thumbs.db
 .cache/
 .local/
 
-# WhatsApp session credentials — sensitive, never commit
+# WhatsApp session credentials — sensitive, never commit (created at runtime root)
+/sessions/
 artifacts/api-server/sessions/
 
-# Local SQLite databases — environment-specific, never commit
+# Local SQLite databases — environment-specific, never commit (created at runtime root)
+/data/*.db
 artifacts/api-server/data/*.db
