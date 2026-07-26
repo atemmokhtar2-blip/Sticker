@@ -5,6 +5,7 @@
     "node": "24"
   },
   "buildAptPackages": [
+    "...",
     "build-essential",
     "libsqlite3-dev",
     "python3"
@@ -27,8 +28,7 @@
     "build": {
       "inputs": [
         {
-          "step": "install",
-          "include": ["."]
+          "step": "install"
         }
       ],
       "commands": [
