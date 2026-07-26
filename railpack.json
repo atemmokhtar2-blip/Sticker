@@ -9,9 +9,6 @@
     "python3",
     "libsqlite3-dev"
   ],
-  "deployAptPackages": [
-    "libsqlite3-0"
-  ],
   "steps": {
     "install": {
       "commands": [
