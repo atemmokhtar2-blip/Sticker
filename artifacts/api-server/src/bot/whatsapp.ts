@@ -267,8 +267,8 @@ async function startConnection(): Promise<void> {
         const code = await sock.requestPairingCode(phoneNumber);
         _linkingCode = code;
         logger.info(
-          { code },
-          `\n\n╔══════════════════════════════╗\n║   🔗  LINKING CODE           ║\n║                              ║\n║   ${code.padEnd(24)}║\n║                              ║\n║  افتح واتساب ← الأجهزة المرتبطة\n║  ← ربط جهاز ← رابط برقم هاتف\n║  ← أدخل الكود أعلاه          ║\n╚══════════════════════════════╝\n`
+          { pairingCode: code, phone: phoneNumber },
+          `WHATSAPP PAIRING CODE: ${code} — open WhatsApp > Linked Devices > Link a Device > Link with phone number`
         );
       } catch (err) {
         logger.warn({ err }, "Could not request pairing code — may already be registered or server not ready");
