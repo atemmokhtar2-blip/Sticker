@@ -1,0 +1,58 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "provider": "node",
+  "packages": {
+    "node": "24"
+  },
+  "buildAptPackages": [
+    "build-essential",
+    "libsqlite3-dev",
+    "python3"
+  ],
+  "deployAptPackages": [
+    "libsqlite3-0"
+  ],
+  "steps": {
+    "install": {
+      "commands": [
+        {
+          "cmd": "corepack enable && pnpm install --frozen-lockfile",
+          "customName": "Install dependencies with pnpm"
+        },
+        {
+          "path": "/app/node_modules/.bin"
+        }
+      ]
+    },
+    "build": {
+      "inputs": [
+        {
+          "step": "install",
+          "include": ["."]
+        }
+      ],
+      "commands": [
+        {
+          "cmd": "pnpm -r --if-present run typecheck",
+          "customName": "TypeScript type checking"
+        },
+        {
+          "cmd": "pnpm --filter @workspace/api-server run build",
+          "customName": "Build api-server with esbuild"
+        }
+      ]
+    }
+  },
+  "deploy": {
+    "base": {
+      "image": "ghcr.io/railwayapp/railpack-runtime:latest"
+    },
+    "inputs": [
+      {
+        "step": "build",
+        "include": ["."]
+      }
+    ],
+    "startCommand": "pnpm --filter @workspace/api-server run start"
+  }
+}

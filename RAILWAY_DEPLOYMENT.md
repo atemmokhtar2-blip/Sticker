@@ -4,17 +4,17 @@
 
 | File | Purpose |
 |------|---------|
-| `nixpacks.toml` | Railway build/deploy configuration (auto-detected) |
+| `railpack.json` | Railway Railpack build/deploy configuration (auto-detected) |
 | `.dockerignore` | Excludes unnecessary files from build context |
 
 ## How Railway Deploys This Project
 
-Railway automatically detects `nixpacks.toml` in the repo root and uses it as the build plan. The configuration:
+Railway automatically detects `railpack.json` in the repo root and uses it as the build plan. The configuration:
 
-1. **Setup Phase** — Installs system dependencies required by native packages (`better-sqlite3`, `sharp`).
-2. **Install Phase** — Enables Corepack and runs `pnpm install --frozen-lockfile` at the monorepo root.
-3. **Build Phase** — Runs TypeScript type-checking and builds the `api-server` artifact using esbuild.
-4. **Start Phase** — Starts the WhatsApp bot server via `pnpm --filter @workspace/api-server run start`.
+1. **Setup** — Sets Node.js 24, installs system dependencies (`build-essential`, `libsqlite3-dev`, `python3`) required by native packages (`better-sqlite3`, `sharp`).
+2. **Install** — Enables Corepack and runs `pnpm install --frozen-lockfile` at the monorepo root.
+3. **Build** — Runs TypeScript type-checking and builds the `api-server` artifact using esbuild.
+4. **Start** — Starts the WhatsApp bot server via `pnpm --filter @workspace/api-server run start`.
 
 ## Environment Variables to Set on Railway
 
@@ -29,8 +29,8 @@ Railway automatically detects `nixpacks.toml` in the repo root and uses it as th
 
 1. Push the new files to your GitHub repo:
    ```bash
-   git add nixpacks.toml .dockerignore
-   git commit -m "Add Railway deployment configuration"
+   git add railpack.json .dockerignore
+   git commit -m "Add Railway Railpack deployment configuration"
    git push
    ```
 
@@ -72,7 +72,7 @@ The bot stores session credentials in `sessions/` and settings in `data/settings
 ## Troubleshooting
 
 ### Build fails with `better-sqlite3` error
-The `nixpacks.toml` installs `python3`, `build-essential`, and `libsqlite3-dev` to compile native modules. If the build still fails, try setting `NIXPACKS_NODE_VERSION=22` as a fallback.
+The `railpack.json` installs `python3`, `build-essential`, and `libsqlite3-dev` to compile native modules. If the build still fails, try setting `RAILPACK_NODE_VERSION=22` in Railway's environment variables.
 
 ### WhatsApp pairing code
 On first deployment, the bot will print a pairing code in the Railway logs. Use this code to pair your WhatsApp account via the web client.
