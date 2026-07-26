@@ -1,0 +1,36 @@
+# ============================================================================
+# Railway / Nixpacks Configuration
+# Deploy: artifacts/api-server (WhatsApp Sticker Bot)
+# ============================================================================
+# DO NOT modify this file if you change package versions manually.
+# Railway reads this file automatically on deploy.
+# ============================================================================
+
+[phases.setup]
+nixPkgs = [
+  "python3",
+  "pkg-config",
+]
+aptPkgs = [
+  "build-essential",
+  "libsqlite3-dev",
+  "python3",
+]
+
+[phases.install]
+cmds = [
+  "corepack enable",
+  "pnpm install --frozen-lockfile",
+]
+
+[phases.build]
+cmds = [
+  "pnpm -r --if-present run typecheck",
+  "pnpm --filter @workspace/api-server run build",
+]
+
+[start]
+cmd = "pnpm --filter @workspace/api-server run start"
+
+[variables]
+NIXPACKS_NODE_VERSION = "24"

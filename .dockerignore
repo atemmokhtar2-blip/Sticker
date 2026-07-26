@@ -1,0 +1,37 @@
+# ============================================================================
+# Docker / Railway Build Ignores
+# Prevents unnecessary files from being sent to the build context
+# ============================================================================
+
+.git
+.github
+.gitignore
+.cache
+.local
+.vscode
+.idea
+
+node_modules
+dist
+tmp
+out-tsc
+*.tsbuildinfo
+
+.expo
+.expo-shared
+
+.cursor
+.github
+
+artifacts/sticker-bot-dashboard
+artifacts/mockup-sandbox
+
+lib/api-client-react
+lib/api-spec
+lib/api-zod
+
+scripts
+
+# OS files
+.DS_Store
+Thumbs.db
