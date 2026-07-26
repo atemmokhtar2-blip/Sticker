@@ -21,7 +21,10 @@ Railway automatically detects `railpack.json` in the repo root and uses it as th
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `PORT` | **Required** — The port the server listens on | `8080` |
+| `PHONE_NUMBER` | **Required** — WhatsApp account number in international format (no `+`) | `201044568121` |
 | `NODE_ENV` | Set to `production` (Railway sets this automatically) | `production` |
+
+> **Why `PHONE_NUMBER` is required:** The bot reads the phone number from the SQLite settings database (`data/settings.db`). On Railway, this file does not exist on first boot unless you use a Persistent Volume. Setting `PHONE_NUMBER` as an environment variable ensures the bot can request its pairing code even without a pre-existing database.
 
 ## Steps to Deploy on Railway
 

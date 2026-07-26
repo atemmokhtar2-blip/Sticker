@@ -73,3 +73,15 @@ GET  /api/bot/status        — حالة الاتصال والكود الحال�
 - الكود الرابط يظهر في logs بعد ~3 ثواني من التشغيل
 - الرقم في `settings.db` يجب بالصيغة الدولية بدون + (مثال: `201044568121`)
 - sharp و better-sqlite3 مضافان لقائمة externals في build.mjs
+- `sessions/creds.json` و `data/*.db` مستثنيان من git — لا ترفعهم أبداً
+
+## Railway Deployment
+
+راجع `RAILWAY_DEPLOYMENT.md` للتعليمات الكاملة. المتطلبات الأساسية:
+
+| المتغير | الوصف |
+|---------|-------|
+| `PORT` | مطلوب — Railway يضبطه تلقائياً |
+| `PHONE_NUMBER` | مطلوب — رقمك الدولي بدون + (مثال: `201044568121`) |
+
+لضمان بقاء الجلسة بعد إعادة التشغيل: فعّل **Persistent Volume** في Railway وربطه بـ `/app/sessions` و `/app/data`.

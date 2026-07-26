@@ -32,6 +32,12 @@ lib/api-zod
 
 scripts
 
+# WhatsApp session credentials — sensitive, never ship in image
+artifacts/api-server/sessions/
+
+# Local SQLite databases — not shipped; Railway uses persistent volumes
+artifacts/api-server/data/*.db
+
 # OS files
 .DS_Store
 Thumbs.db

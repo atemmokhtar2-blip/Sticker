@@ -240,7 +240,10 @@ async function handleIncomingMessages(messages: WAMessage[]): Promise<void> {
 
 async function startConnection(): Promise<void> {
   const { state, saveCreds } = await useMultiFileAuthState(SESSIONS_DIR);
-  const phoneNumber = getSetting("phone_number") ?? "201044568121";
+  const phoneNumber =
+    process.env["PHONE_NUMBER"] ??
+    getSetting("phone_number") ??
+    "201044568121";
 
   _status = "connecting";
   _linkingCode = null;
