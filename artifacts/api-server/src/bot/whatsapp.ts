@@ -10,6 +10,7 @@ import { Boom } from "@hapi/boom";
 import path from "node:path";
 import pino from "pino";
 import { logger } from "../lib/logger";
+import fs from "node:fs";
 import { convertToSticker } from "./image";
 import { getSetting } from "./settings";
 
@@ -306,30 +307,29 @@ async function startConnection(): Promise<void> {
     defaultQueryTimeoutMs: 60_000,
   });
 
-  // Request pairing code if not yet registered
+    // Request pairing code if not yet registered
   if (!state.creds.registered) {
-    // Clean phone number: remove any non-digits (like + or spaces)
+    // Force clear sessions if we're trying to link a new number and it fails
     const cleanPhone = phoneNumber.replace(/\D/g, "");
     
-    // Increased delay (20s) - WA servers need time to trust the new connection
     setTimeout(async () => {
       try {
         if (!sock || sock.authState.creds.registered) return;
-        
-        logger.info({ phone: cleanPhone }, "Requesting Pairing Code (Final Attempt Strategy)...");
+        logger.info({ phone: cleanPhone }, "Requesting Pairing Code...");
         const code = await sock.requestPairingCode(cleanPhone);
         _linkingCode = code;
-        
-        console.log("\n" + "=".repeat(50));
-        console.log(`🔥 NEW PAIRING CODE: ${code}`);
-        console.log("💡 PLEASE ENTER IT IMMEDIATELY ON YOUR PHONE");
-        console.log("=".repeat(50) + "\n");
-        
-        logger.info({ pairingCode: code, phone: cleanPhone }, "✅ Code generated successfully.");
-      } catch (err) {
-        logger.error({ err, phone: cleanPhone }, "❌ Pairing request failed. Try clearing 'sessions' folder.");
+        console.log(`\n🔥 NEW PAIRING CODE FOR ${cleanPhone}: ${code}\n`);
+      } catch (err: any) {
+        logger.error({ err: err.message, phone: cleanPhone }, "❌ Pairing request failed.");
+        if (err.output?.statusCode === 428 || err.message?.includes("Precondition Required")) {
+           logger.warn("Detected Precondition Required. Clearing sessions and restarting...");
+           if (fs.existsSync(SESSIONS_DIR)) {
+             fs.rmSync(SESSIONS_DIR, { recursive: true, force: true });
+           }
+           process.exit(1); // Force restart by Railway/Docker to get fresh state
+        }
       }
-    }, 20000);
+    }, 15000);
   }
 
   sock.ev.on("connection.update", async (update) => {
