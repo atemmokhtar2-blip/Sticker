@@ -16,7 +16,7 @@ import { getSetting } from "./settings";
 const SESSIONS_DIR = path.resolve(process.cwd(), "sessions");
 
 // How long to wait after the last received image before prompting for caption (ms)
-const IMAGE_BATCH_DEBOUNCE_MS = 3000;
+const IMAGE_BATCH_DEBOUNCE_MS = 1500;
 
 // Silent pino logger for baileys internals
 const baileysLogger = pino({ level: "silent" });
@@ -154,11 +154,6 @@ async function onCaptionReceived(jid: string, captionRaw: string): Promise<void>
       `⚠️ الوصف طويل جداً — سيتم استخدام أول ${MAX_CAPTION_LENGTH} حرف فقط.`
     );
   }
-
-  await sendText(
-    jid,
-    `⏳ جاري تحويل ${count} ${count === 1 ? "صورة" : "صورة"} بالوصف المختار...`
-  );
 
   logger.info({ jid, count, captionLength: caption.length }, "Processing batch with caption");
 
