@@ -40,13 +40,11 @@ RUN rm -rf artifacts/api-server/src \
 # ---- Stage 3: Production runtime ----
 FROM node:22-bookworm AS production
 
-# Install runtime SQLite library
+# Install runtime SQLite library and wget for healthcheck
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libsqlite3-0 \
+    wget \
     && rm -rf /var/lib/apt/lists/*
-
-# Create non-root user
-RUN useradd -r -s /usr/sbin/nologin appuser
 
 WORKDIR /app
 
@@ -60,6 +58,13 @@ RUN rm -rf artifacts/api-server/node_modules/esbuild \
     artifacts/api-server/node_modules/esbuild-plugin-pino \
     artifacts/api-server/node_modules/pino-pretty \
     artifacts/api-server/node_modules/@types
+
+# Create required runtime directories with correct ownership BEFORE switching user
+RUN mkdir -p /app/data /app/sessions
+
+# Create non-root user and set ownership of the entire app directory
+RUN useradd -r -s /usr/sbin/nologin appuser && \
+    chown -R appuser:appuser /app
 
 USER appuser
 
