@@ -1,0 +1,16 @@
+# nixpacks.toml - Build configuration for Railway (nixpacks builder)
+# better-sqlite3 needs Python + build tools to compile native modules
+
+[phases.setup]
+nixPkgs = ['...', 'python3', 'gcc', 'make', 'pkg-config']
+aptPkgs = ['python3', 'build-essential', 'libsqlite3-dev']
+
+[phases.install]
+cmds = ['corepack enable && pnpm install --frozen-lockfile']
+
+[phases.build]
+dependsOn = ['install']
+cmds = ['pnpm --filter @workspace/api-server run build']
+
+[start]
+cmd = 'node --enable-source-maps artifacts/api-server/dist/index.mjs'
