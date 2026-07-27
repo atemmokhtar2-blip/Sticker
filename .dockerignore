@@ -12,6 +12,10 @@
 
 node_modules
 dist
+todo.md
+replit.md
+.railway
+railpack.json
 tmp
 out-tsc
 *.tsbuildinfo
