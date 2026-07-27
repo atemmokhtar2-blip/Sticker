@@ -18,8 +18,11 @@ const SESSIONS_DIR = path.resolve(process.cwd(), "sessions");
 // How long to wait after the last received image before prompting for caption (ms)
 const IMAGE_BATCH_DEBOUNCE_MS = 1500;
 
-// WhatsApp sticker caption max length
-const STICKER_CAPTION_MAX = 65536;
+// WhatsApp text message max length
+const TEXT_MAX_LENGTH = 65536;
+
+// Delay between sending sticker and its caption (ms)
+const CAPTION_DELAY_MS = 300;
 
 // Silent pino logger for baileys internals
 const baileysLogger = pino({ level: "silent" });
@@ -137,19 +140,54 @@ async function onBatchComplete(jid: string): Promise<void> {
 }
 
 /**
+ * Send a single sticker then immediately send the caption text after it.
+ * Baileys StickerMessage proto does NOT have a caption field, so we send
+ * the text as a separate message right after the sticker.
+ */
+async function sendStickerWithCaption(
+  jid: string,
+  stickerBuffer: Buffer,
+  caption: string
+): Promise<boolean> {
+  try {
+    // 1. Send the sticker
+    const sentMsg = await sock!.sendMessage(jid, {
+      sticker: stickerBuffer,
+    });
+
+    // 2. Send caption text right after (with tiny delay to ensure order)
+    if (caption && caption.trim().length > 0) {
+      await new Promise((r) => setTimeout(r, CAPTION_DELAY_MS));
+      await sock!.sendMessage(jid, {
+        text: caption,
+      });
+    }
+
+    logger.info(
+      { jid, sizeKB: Math.round(stickerBuffer.length / 1024) },
+      "✅ Sticker + caption sent"
+    );
+    return true;
+  } catch (err) {
+    logger.error({ err, jid }, "Failed to send sticker");
+    return false;
+  }
+}
+
+/**
  * Called when the user sends a text message while we're awaiting a caption.
- * Processes all pending images and sends the stickers with the caption.
+ * Processes all pending images and sends the stickers with captions.
  */
 async function onCaptionReceived(jid: string, captionRaw: string): Promise<void> {
   const session = awaitingCaption.get(jid);
   if (!session) return;
   awaitingCaption.delete(jid);
 
-  // Trim caption (keep up to WhatsApp max for sticker caption)
+  // Trim caption (keep up to WhatsApp text max)
   let caption = captionRaw.trim();
   let truncated = false;
-  if (caption.length > STICKER_CAPTION_MAX) {
-    caption = caption.slice(0, STICKER_CAPTION_MAX);
+  if (caption.length > TEXT_MAX_LENGTH) {
+    caption = caption.slice(0, TEXT_MAX_LENGTH);
     truncated = true;
   }
 
@@ -158,7 +196,7 @@ async function onCaptionReceived(jid: string, captionRaw: string): Promise<void>
   if (truncated) {
     await sendText(
       jid,
-      `⚠️ الوصف طويل جداً — سيتم استخدام أول ${STICKER_CAPTION_MAX} حرف فقط.`
+      `⚠️ الوصف طويل جداً — سيتم استخدام أول ${TEXT_MAX_LENGTH} حرف فقط.`
     );
   }
 
@@ -172,20 +210,12 @@ async function onCaptionReceived(jid: string, captionRaw: string): Promise<void>
   let sent = 0;
   let failed = 0;
 
+  // Send each sticker sequentially so caption stays paired with its sticker
   for (const result of results) {
     if (result.status === "fulfilled" && result.value) {
-      try {
-        // Send sticker with caption — the text appears BELOW the sticker in WhatsApp
-        await sock!.sendMessage(jid, {
-          sticker: result.value,
-          caption: caption,
-        });
-        sent++;
-        logger.info({ jid, sizeKB: Math.round(result.value.length / 1024) }, "✅ Sticker sent");
-      } catch (err) {
-        logger.error({ err, jid }, "Failed to send sticker");
-        failed++;
-      }
+      const success = await sendStickerWithCaption(jid, result.value, caption);
+      if (success) sent++;
+      else failed++;
     } else {
       failed++;
     }
