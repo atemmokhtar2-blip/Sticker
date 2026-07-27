@@ -252,11 +252,14 @@ async function startConnection(): Promise<void> {
     auth: state,
     printQRInTerminal: false,
     logger: baileysLogger,
-    browser: Browsers.ubuntu("Chrome"),
+    browser: Browsers.macOS("Safari"),
     connectTimeoutMs: 60_000,
-    retryRequestDelayMs: 2000,
+    keepAliveIntervalMs: 15_000,
+    retryRequestDelayMs: 3000,
     maxMsgRetryCount: 3,
     markOnlineOnConnect: false,
+    syncFullHistory: false,
+    defaultQueryTimeoutMs: undefined,
   });
 
   // Request pairing code if not yet registered
@@ -273,7 +276,7 @@ async function startConnection(): Promise<void> {
       } catch (err) {
         logger.warn({ err }, "Could not request pairing code — may already be registered or server not ready");
       }
-    }, 3000);
+    }, 5000);
   }
 
   sock.ev.on("connection.update", async (update) => {
