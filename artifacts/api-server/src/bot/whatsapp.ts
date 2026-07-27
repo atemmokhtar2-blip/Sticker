@@ -79,19 +79,24 @@ async function downloadAndConvert(
   if (processingSet.has(msgId)) return null;
   processingSet.add(msgId);
   try {
+    process.stdout.write(`[STEP1] downloading media msgId=${msgId}\n`);
     const imageBuffer = (await downloadMediaMessage(
       msg,
       "buffer",
       {},
       { logger: baileysLogger }
     )) as Buffer;
+    process.stdout.write(`[STEP2] downloaded bytes=${imageBuffer?.length}\n`);
 
     if (!imageBuffer || imageBuffer.length === 0) {
       logger.warn({ msgId }, "Empty image buffer — skipping");
       return null;
     }
 
-    return await convertToSticker(imageBuffer, caption);
+    process.stdout.write(`[STEP3] converting to sticker...\n`);
+    const result = await convertToSticker(imageBuffer, caption);
+    process.stdout.write(`[STEP4] done stickerBytes=${result?.length}\n`);
+    return result;
   } catch (err) {
     logger.error({ err, msgId }, "Error converting image to sticker");
     return null;
