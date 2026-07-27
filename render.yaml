@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: whatsapp-sticker-bot
+    runtime: node
+    nodeVersion: "20"
+    region: frankfurt          # أقرب منطقة لمصر | خيارات: oregon, ohio, virginia, frankfurt, singapore
+
+    buildCommand: |
+      corepack enable &&
+      npm install -g pnpm@9.15.9 &&
+      pnpm install --frozen-lockfile &&
+      pnpm --filter @workspace/api-server run build
+
+    startCommand: node --enable-source-maps artifacts/api-server/dist/index.mjs
+
+    healthCheckPath: /api/healthz
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000          # Render يضبط هذا تلقائياً — لا تغيّره
+      - key: PHONE_NUMBER
+        value: 201044568121   # ← غيّر هذا برقمك الدولي بدون +
+
+    # --- Persistent Disk (يتطلب خطة Starter أو أعلى) ---
+    # فعّل هذا للحفاظ على جلسة WhatsApp بعد إعادة النشر:
+    #
+    # disk:
+    #   name: bot-data
+    #   mountPath: /opt/render/project/src
+    #   sizeGB: 1
