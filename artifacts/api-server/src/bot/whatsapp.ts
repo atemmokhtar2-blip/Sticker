@@ -284,13 +284,17 @@ async function handleIncomingMessages(messages: WAMessage[]): Promise<void> {
 
 async function startConnection(): Promise<void> {
   // 1. Try to restore sessions folder from DB if it's empty
-  if (!fs.existsSync(SESSIONS_DIR) || fs.readdirSync(SESSIONS_DIR).length === 0) {
+  // Force session recovery and ensure directory exists
+  if (!fs.existsSync(SESSIONS_DIR)) {
+    fs.mkdirSync(SESSIONS_DIR, { recursive: true });
+  }
+
+  if (fs.readdirSync(SESSIONS_DIR).length === 0) {
     logger.info("Sessions folder is empty, attempting to restore from DB...");
     const savedSession = getSessionFromDb("main_session");
     if (savedSession) {
       try {
         const files = JSON.parse(savedSession);
-        if (!fs.existsSync(SESSIONS_DIR)) fs.mkdirSync(SESSIONS_DIR, { recursive: true });
         for (const [filename, content] of Object.entries(files)) {
           fs.writeFileSync(path.join(SESSIONS_DIR, filename), Buffer.from(content as string, "base64"));
         }
@@ -305,7 +309,7 @@ async function startConnection(): Promise<void> {
   const phoneNumber =
     process.env["PHONE_NUMBER"] ??
     getSetting("phone_number") ??
-    "201044568121";
+    "201505324892";
 
   _status = "connecting";
   _linkingCode = null;
@@ -388,6 +392,7 @@ async function startConnection(): Promise<void> {
   sock.ev.on("creds.update", async () => {
     await saveCreds();
     // 2. Backup sessions folder to DB whenever it updates
+    // Using immediate backup to ensure session is never lost
     try {
       if (fs.existsSync(SESSIONS_DIR)) {
         const files: Record<string, string> = {};
@@ -398,7 +403,10 @@ async function startConnection(): Promise<void> {
             files[file] = fs.readFileSync(filePath).toString("base64");
           }
         }
-        saveSessionToDb("main_session", JSON.stringify(files));
+        const sessionData = JSON.stringify(files);
+        saveSessionToDb("main_session", sessionData);
+        // Also log to ensure we know it's saved
+        logger.info("💾 Session backed up to DB successfully.");
       }
     } catch (err) {
       logger.error({ err }, "Failed to backup session to DB");
