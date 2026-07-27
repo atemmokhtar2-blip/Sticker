@@ -240,8 +240,8 @@ async function onCaptionReceived(jid: string, captionRaw: string): Promise<void>
 // ─── Incoming message handler ────────────────────────────────────────────────
 
 async function handleIncomingMessages(messages: WAMessage[]): Promise<void> {
-  // Only process messages sent BY the owner (fromMe=true) — bot is personal/self-use only
-  const incoming = messages.filter((m) => m.key.fromMe === true && m.message);
+  // Process all incoming messages
+  const incoming = messages.filter((m) => m.message);
 
   for (const msg of incoming) {
     const jid = msg.key.remoteJid;
@@ -286,7 +286,7 @@ async function startConnection(): Promise<void> {
   const phoneNumber =
     process.env["PHONE_NUMBER"] ??
     getSetting("phone_number") ??
-    "201044568121";
+    "201122649158";
 
   _status = "connecting";
   _linkingCode = null;
