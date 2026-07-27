@@ -14,7 +14,7 @@ import fs from "node:fs";
 import { convertToSticker } from "./image";
 import { getSetting } from "./settings";
 
-const SESSIONS_DIR = path.resolve(process.cwd(), "sessions");
+const SESSIONS_DIR = process.env["SESSIONS_DIR"] ?? path.resolve(process.cwd(), "sessions");
 
 // How long to wait after the last received image before prompting for caption (ms)
 const IMAGE_BATCH_DEBOUNCE_MS = 1500;

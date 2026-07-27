@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import path from "node:path";
 import { logger } from "../lib/logger";
 
-const DB_PATH = path.resolve(process.cwd(), "data", "settings.db");
+const DB_PATH = process.env["DB_PATH"] ?? path.resolve(process.cwd(), "data", "settings.db");
 
 let _db: Database.Database | null = null;
 

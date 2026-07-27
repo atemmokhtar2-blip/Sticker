@@ -60,7 +60,8 @@ RUN rm -rf artifacts/api-server/node_modules/esbuild \
     artifacts/api-server/node_modules/@types
 
 # Create required runtime directories with correct ownership BEFORE switching user
-RUN mkdir -p /app/data /app/sessions
+# We use /app/persistent as a base for volumes
+RUN mkdir -p /app/data /app/sessions /app/persistent/data /app/persistent/sessions
 
 # Create non-root user and set ownership of the entire app directory
 RUN useradd -r -s /usr/sbin/nologin appuser && \
