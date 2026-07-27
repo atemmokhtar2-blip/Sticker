@@ -1,25 +1,35 @@
 # ============================================================================
-# Railway build context ignores — keeps the build image lean
+# Docker build context ignores
 # ============================================================================
 
+# Git
 .git
 .github
 .gitignore
-.cache
-.local
+
+# IDE / Editor
 .vscode
 .idea
+.cache
+.local
 
-node_modules
-dist
-todo.md
-replit.md
-.railway
+# Platform-specific configs (Railway uses its own config)
+railway.json
 railpack.json
-tmp
-out-tsc
-*.tsbuildinfo
+render.yaml
+replit.nix
+.replit
+
+# Documentation (not needed in Docker image)
+README.md
 
 # OS files
 .DS_Store
 Thumbs.db
+
+# Build artifacts (will be built inside Docker)
+node_modules
+dist
+tmp
+out-tsc
+*.tsbuildinfo
