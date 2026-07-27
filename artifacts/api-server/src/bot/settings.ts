@@ -19,12 +19,6 @@ function getDb(): Database.Database {
     const defaults: Record<string, string> = {
       phone_number: "201044568121",
       channel_name: "Sticker Bot",
-      watermark_text: "01044568121",
-      watermark_position: "bottom-right",
-      watermark_color: "#FFFFFF",
-      font_size: "18",
-      font_family: "Arial",
-      watermark_enabled: "true",
       sticker_quality: "80",
     };
     const insert = _db.prepare(

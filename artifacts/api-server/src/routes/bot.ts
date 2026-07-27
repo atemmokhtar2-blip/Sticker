@@ -19,12 +19,6 @@ router.get("/settings", (_req, res): void => {
 // PATCH /api/settings
 router.patch("/settings", (req, res): void => {
   const allowed = [
-    "watermark_text",
-    "watermark_position",
-    "watermark_color",
-    "font_size",
-    "font_family",
-    "watermark_enabled",
     "sticker_quality",
     "channel_name",
   ];

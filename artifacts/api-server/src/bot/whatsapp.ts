@@ -10,13 +10,16 @@ import { Boom } from "@hapi/boom";
 import path from "node:path";
 import pino from "pino";
 import { logger } from "../lib/logger";
-import { convertToSticker, MAX_CAPTION_LENGTH } from "./image";
+import { convertToSticker } from "./image";
 import { getSetting } from "./settings";
 
 const SESSIONS_DIR = path.resolve(process.cwd(), "sessions");
 
 // How long to wait after the last received image before prompting for caption (ms)
 const IMAGE_BATCH_DEBOUNCE_MS = 1500;
+
+// WhatsApp sticker caption max length
+const STICKER_CAPTION_MAX = 65536;
 
 // Silent pino logger for baileys internals
 const baileysLogger = pino({ level: "silent" });
@@ -70,10 +73,9 @@ async function sendText(jid: string, text: string, quotedMsg?: WAMessage): Promi
   }
 }
 
-/** Download + convert one image, return the sticker buffer (or null on failure). */
+/** Download + convert one image to WebP sticker (no text modification). */
 async function downloadAndConvert(
   msg: WAMessage,
-  caption: string
 ): Promise<Buffer | null> {
   const msgId = msg.key.id!;
   if (processingSet.has(msgId)) return null;
@@ -84,7 +86,7 @@ async function downloadAndConvert(
       msg,
       "buffer",
       {},
-      { logger: baileysLogger }
+      { logger: baileysLogger, reuploadRequest: async (m: WAMessage) => m }
     )) as Buffer;
     process.stdout.write(`[STEP2] downloaded bytes=${imageBuffer?.length}\n`);
 
@@ -94,7 +96,7 @@ async function downloadAndConvert(
     }
 
     process.stdout.write(`[STEP3] converting to sticker...\n`);
-    const result = await convertToSticker(imageBuffer, caption);
+    const result = await convertToSticker(imageBuffer);
     process.stdout.write(`[STEP4] done stickerBytes=${result?.length}\n`);
     return result;
   } catch (err) {
@@ -136,18 +138,18 @@ async function onBatchComplete(jid: string): Promise<void> {
 
 /**
  * Called when the user sends a text message while we're awaiting a caption.
- * Processes all pending images and sends the stickers.
+ * Processes all pending images and sends the stickers with the caption.
  */
 async function onCaptionReceived(jid: string, captionRaw: string): Promise<void> {
   const session = awaitingCaption.get(jid);
   if (!session) return;
   awaitingCaption.delete(jid);
 
-  // Trim and enforce reasonable length for embedding in sticker image
+  // Trim caption (keep up to WhatsApp max for sticker caption)
   let caption = captionRaw.trim();
   let truncated = false;
-  if (caption.length > MAX_CAPTION_LENGTH) {
-    caption = caption.slice(0, MAX_CAPTION_LENGTH);
+  if (caption.length > STICKER_CAPTION_MAX) {
+    caption = caption.slice(0, STICKER_CAPTION_MAX);
     truncated = true;
   }
 
@@ -156,15 +158,15 @@ async function onCaptionReceived(jid: string, captionRaw: string): Promise<void>
   if (truncated) {
     await sendText(
       jid,
-      `⚠️ الوصف طويل جداً — سيتم استخدام أول ${MAX_CAPTION_LENGTH} حرف فقط.`
+      `⚠️ الوصف طويل جداً — سيتم استخدام أول ${STICKER_CAPTION_MAX} حرف فقط.`
     );
   }
 
   logger.info({ jid, count, captionLength: caption.length }, "Processing batch with caption");
 
-  // Convert all images in parallel
+  // Convert all images in parallel (pure conversion, no text on image)
   const results = await Promise.allSettled(
-    session.messages.map((msg) => downloadAndConvert(msg, caption))
+    session.messages.map((msg) => downloadAndConvert(msg))
   );
 
   let sent = 0;
@@ -173,7 +175,11 @@ async function onCaptionReceived(jid: string, captionRaw: string): Promise<void>
   for (const result of results) {
     if (result.status === "fulfilled" && result.value) {
       try {
-        await sock!.sendMessage(jid, { sticker: result.value });
+        // Send sticker with caption — the text appears BELOW the sticker in WhatsApp
+        await sock!.sendMessage(jid, {
+          sticker: result.value,
+          caption: caption,
+        });
         sent++;
         logger.info({ jid, sizeKB: Math.round(result.value.length / 1024) }, "✅ Sticker sent");
       } catch (err) {

@@ -1,6 +1,6 @@
 # WhatsApp Sticker Bot — Railway Deployment
 
-بوت واتساب شخصي يحوّل الصور تلقائياً إلى ملصقات WhatsApp احترافية بجودة عالية.
+بوت واتساب شخصي يحوّل الصور تلقائياً إلى ملصقات WhatsApp احترافية بجودة عالية مع دعم **Sticker Caption** الحقيقي.
 
 ## النشر على Railway
 
@@ -27,7 +27,7 @@
 - أرسل صورة واحدة أو أكثر في المحادثة مع البوت.
 - ينتظر البوت 3 ثوانٍ بعد آخر صورة ثم يسألك عن الوصف.
 - أرسل الوصف (نص حر: عربي/إنجليزي/إيموجي/أسطر/روابط).
-- يحوّل البوت كل الصور فوراً ويُرسل الملصقات بالوصف نفسه.
+- يحوّل البوت كل الصور فوراً ويُرسل الملصقات بالوصف نفسه كـ **Sticker Caption** (يظهر أسفل الملصق).
 
 ### إعادة الربط
 احذف محتوى مجلد `sessions/` (عبر Persistent Volume) ثم أعد النشر ليظهر كود جديد.
@@ -43,10 +43,11 @@ PORT=8080 node --enable-source-maps artifacts/api-server/dist/index.mjs
 - `GET /api/healthz` — فحص الصحة
 - `GET /api/bot/status` — حالة الاتصال + الكود الحالي
 - `GET /api/settings` — جميع الإعدادات
-- `PATCH /api/settings` — تعديل الإعدادات (watermark_text, watermark_position, watermark_color, font_size, font_family, watermark_enabled, sticker_quality)
+- `PATCH /api/settings` — تعديل الإعدادات (`sticker_quality`, `channel_name`)
 
 ## ملاحظات
 - يتطلب Node.js 20+ (محدد في `package.json` engines).
 - يستخدم `@whiskeysockets/baileys` للاتصال بواتساب (Pairing Code).
 - يستخدم `sharp` لتحويل الصور إلى WebP 512×512 + `better-sqlite3` للإعدادات.
+- **لا يتم تعديل الصورة أبداً** — الوصف يظهر كـ caption أسفل الملصق فقط.
 - `sessions/` و `data/*.db` تُنشأ وقت التشغيل ولا تُرفع إلى git.
