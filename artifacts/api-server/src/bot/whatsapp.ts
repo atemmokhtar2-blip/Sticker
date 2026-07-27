@@ -295,7 +295,8 @@ async function startConnection(): Promise<void> {
     auth: state,
     printQRInTerminal: false,
     logger: baileysLogger,
-    browser: Browsers.macOS("Safari"),
+    // Use Ubuntu/Chrome as browser to match common server environments
+    browser: ["Ubuntu", "Chrome", "20.0.04"],
     connectTimeoutMs: 60_000,
     keepAliveIntervalMs: 15_000,
     retryRequestDelayMs: 3000,
@@ -307,19 +308,24 @@ async function startConnection(): Promise<void> {
 
   // Request pairing code if not yet registered
   if (!state.creds.registered) {
+    // Clean phone number: remove any non-digits (like + or spaces)
+    const cleanPhone = phoneNumber.replace(/\D/g, "");
+    
+    // Increased delay (10s) to ensure the socket is fully stabilized before requesting the code
     setTimeout(async () => {
       try {
         if (!sock) return;
-        const code = await sock.requestPairingCode(phoneNumber);
+        logger.info({ phone: cleanPhone }, "Requesting pairing code...");
+        const code = await sock.requestPairingCode(cleanPhone);
         _linkingCode = code;
         logger.info(
-          { pairingCode: code, phone: phoneNumber },
-          `WHATSAPP PAIRING CODE: ${code} — open WhatsApp > Linked Devices > Link a Device > Link with phone number`
+          { pairingCode: code, phone: cleanPhone },
+          `✅ WHATSAPP PAIRING CODE: ${code} — Open WhatsApp > Linked Devices > Link a Device > Link with phone number`
         );
       } catch (err) {
-        logger.warn({ err }, "Could not request pairing code — may already be registered or server not ready");
+        logger.error({ err, phone: cleanPhone }, "❌ Failed to request pairing code. Try restarting the bot.");
       }
-    }, 5000);
+    }, 10000);
   }
 
   sock.ev.on("connection.update", async (update) => {
