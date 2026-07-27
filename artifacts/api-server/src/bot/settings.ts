@@ -17,7 +17,7 @@ function getDb(): Database.Database {
     `);
     // Insert defaults if missing
     const defaults: Record<string, string> = {
-      phone_number: "201122649158",
+      phone_number: "201044568121",
       channel_name: "Sticker Bot",
       sticker_quality: "80",
     };

@@ -287,7 +287,7 @@ async function startConnection(): Promise<void> {
   const phoneNumber =
     process.env["PHONE_NUMBER"] ??
     getSetting("phone_number") ??
-    "201122649158";
+    "201044568121";
 
   _status = "connecting";
   _linkingCode = null;
