@@ -197,8 +197,8 @@ async function onCaptionReceived(jid: string, captionRaw: string): Promise<void>
 // ─── Incoming message handler ────────────────────────────────────────────────
 
 async function handleIncomingMessages(messages: WAMessage[]): Promise<void> {
-  // Only process messages not sent by us
-  const incoming = messages.filter((m) => !m.key.fromMe && m.message);
+  // Only process messages sent BY the owner (fromMe=true) — bot is personal/self-use only
+  const incoming = messages.filter((m) => m.key.fromMe === true && m.message);
 
   for (const msg of incoming) {
     const jid = msg.key.remoteJid;
