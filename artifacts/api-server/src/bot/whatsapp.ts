@@ -295,13 +295,13 @@ async function startConnection(): Promise<void> {
     auth: state,
     printQRInTerminal: false,
     logger: baileysLogger,
-    // Use Ubuntu/Chrome as browser to match common server environments
-    browser: ["Ubuntu", "Chrome", "20.0.04"],
+    // Use a more standard Chrome identity to avoid "Couldn't link device" errors
+    browser: Browsers.ubuntu("Chrome"),
     connectTimeoutMs: 60_000,
-    keepAliveIntervalMs: 15_000,
-    retryRequestDelayMs: 3000,
-    maxMsgRetryCount: 3,
-    markOnlineOnConnect: false,
+    keepAliveIntervalMs: 30_000,
+    retryRequestDelayMs: 5000,
+    maxMsgRetryCount: 5,
+    markOnlineOnConnect: true, // Sometimes helps with initial pairing
     syncFullHistory: false,
     defaultQueryTimeoutMs: undefined,
   });
@@ -311,21 +311,27 @@ async function startConnection(): Promise<void> {
     // Clean phone number: remove any non-digits (like + or spaces)
     const cleanPhone = phoneNumber.replace(/\D/g, "");
     
-    // Increased delay (10s) to ensure the socket is fully stabilized before requesting the code
+    // Increased delay (15s) to ensure the socket is fully stabilized and authenticated with WA servers
     setTimeout(async () => {
       try {
-        if (!sock) return;
-        logger.info({ phone: cleanPhone }, "Requesting pairing code...");
+        if (!sock || sock.authState.creds.registered) return;
+        
+        logger.info({ phone: cleanPhone }, "Initiating pairing code request...");
         const code = await sock.requestPairingCode(cleanPhone);
         _linkingCode = code;
+        
+        console.log("\n" + "=".repeat(50));
+        console.log(`🚀 YOUR WHATSAPP PAIRING CODE: ${code}`);
+        console.log("=".repeat(50) + "\n");
+        
         logger.info(
           { pairingCode: code, phone: cleanPhone },
-          `✅ WHATSAPP PAIRING CODE: ${code} — Open WhatsApp > Linked Devices > Link a Device > Link with phone number`
+          `✅ SUCCESS: Enter this code on your phone now.`
         );
       } catch (err) {
-        logger.error({ err, phone: cleanPhone }, "❌ Failed to request pairing code. Try restarting the bot.");
+        logger.error({ err, phone: cleanPhone }, "❌ Pairing code request failed. Please check if the number is correct and has WhatsApp.");
       }
-    }, 10000);
+    }, 15000);
   }
 
   sock.ev.on("connection.update", async (update) => {
