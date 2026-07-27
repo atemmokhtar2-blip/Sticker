@@ -12,7 +12,7 @@ import pino from "pino";
 import { logger } from "../lib/logger";
 import fs from "node:fs";
 import { convertToSticker } from "./image";
-import { getSetting } from "./settings";
+import { getSetting, saveSessionToDb, getSessionFromDb, clearSessionFromDb } from "./settings";
 
 const SESSIONS_DIR = process.env["SESSIONS_DIR"] ?? path.resolve(process.cwd(), "sessions");
 
@@ -283,6 +283,24 @@ async function handleIncomingMessages(messages: WAMessage[]): Promise<void> {
 // ─── Connection management ───────────────────────────────────────────────────
 
 async function startConnection(): Promise<void> {
+  // 1. Try to restore sessions folder from DB if it's empty
+  if (!fs.existsSync(SESSIONS_DIR) || fs.readdirSync(SESSIONS_DIR).length === 0) {
+    logger.info("Sessions folder is empty, attempting to restore from DB...");
+    const savedSession = getSessionFromDb("main_session");
+    if (savedSession) {
+      try {
+        const files = JSON.parse(savedSession);
+        if (!fs.existsSync(SESSIONS_DIR)) fs.mkdirSync(SESSIONS_DIR, { recursive: true });
+        for (const [filename, content] of Object.entries(files)) {
+          fs.writeFileSync(path.join(SESSIONS_DIR, filename), Buffer.from(content as string, "base64"));
+        }
+        logger.info("✅ Session restored from DB successfully.");
+      } catch (err) {
+        logger.error({ err }, "Failed to restore session from DB");
+      }
+    }
+  }
+
   const { state, saveCreds } = await useMultiFileAuthState(SESSIONS_DIR);
   const phoneNumber =
     process.env["PHONE_NUMBER"] ??
@@ -326,6 +344,7 @@ async function startConnection(): Promise<void> {
            if (fs.existsSync(SESSIONS_DIR)) {
              fs.rmSync(SESSIONS_DIR, { recursive: true, force: true });
            }
+           clearSessionFromDb("main_session");
            process.exit(1); // Force restart by Railway/Docker to get fresh state
         }
       }
@@ -366,7 +385,25 @@ async function startConnection(): Promise<void> {
     }
   });
 
-  sock.ev.on("creds.update", saveCreds);
+  sock.ev.on("creds.update", async () => {
+    await saveCreds();
+    // 2. Backup sessions folder to DB whenever it updates
+    try {
+      if (fs.existsSync(SESSIONS_DIR)) {
+        const files: Record<string, string> = {};
+        const fileList = fs.readdirSync(SESSIONS_DIR);
+        for (const file of fileList) {
+          const filePath = path.join(SESSIONS_DIR, file);
+          if (fs.lstatSync(filePath).isFile()) {
+            files[file] = fs.readFileSync(filePath).toString("base64");
+          }
+        }
+        saveSessionToDb("main_session", JSON.stringify(files));
+      }
+    } catch (err) {
+      logger.error({ err }, "Failed to backup session to DB");
+    }
+  });
 
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;

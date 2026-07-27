@@ -52,3 +52,34 @@ export function getAllSettings(): Record<string, string> {
   }[];
   return Object.fromEntries(rows.map((r) => [r.key, r.value]));
 }
+
+// ─── Session Persistence Helpers ─────────────────────────────────────────────
+
+export function saveSessionToDb(id: string, data: string): void {
+  getDb().exec(`
+    CREATE TABLE IF NOT EXISTS whatsapp_sessions (
+      id TEXT PRIMARY KEY,
+      data TEXT NOT NULL
+    );
+  `);
+  getDb()
+    .prepare("INSERT OR REPLACE INTO whatsapp_sessions (id, data) VALUES (?, ?)")
+    .run(id, data);
+}
+
+export function getSessionFromDb(id: string): string | null {
+  try {
+    const row = getDb()
+      .prepare("SELECT data FROM whatsapp_sessions WHERE id = ?")
+      .get(id) as { data: string } | undefined;
+    return row ? row.data : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearSessionFromDb(id: string): void {
+  try {
+    getDb().prepare("DELETE FROM whatsapp_sessions WHERE id = ?").run(id);
+  } catch {}
+}
