@@ -128,14 +128,9 @@ async function onBatchComplete(jid: string): Promise<void> {
 
   await sendText(
     jid,
-    `📷 تم استلام ${count} ${count === 1 ? "صورة" : "صورة"} بنجاح.\n\n` +
-      `✍️ الآن أرسل الوصف الذي تريد إضافته أسفل ${count === 1 ? "الملصق" : "جميع الملصقات"}.\n\n` +
-      `يدعم:\n` +
-      `✅ النصوص الطويلة\n` +
-      `✅ العربية والإنجليزية\n` +
-      `✅ الإيموجي\n` +
-      `✅ الأسطر المتعددة\n` +
-      `✅ الروابط وأرقام الهواتف`
+    `✅ تم استلام ${count} ${count === 1 ? "صورة" : "صورة"}.\n\n` +
+      `✍️ أرسل الآن النص الذي تريده أن يظهر أسفل ${count === 1 ? "الملصق" : "الملصقات"}.\n\n` +
+      `💡 سيتم إرسال النص كرسالة مرتبطة (Reply) بالملصق لضمان ظهوره بالأسفل مباشرة.`
   );
 }
 
@@ -155,12 +150,15 @@ async function sendStickerWithCaption(
       sticker: stickerBuffer,
     });
 
-    // 2. Send caption text right after (with tiny delay to ensure order)
+    // 2. Send caption text right after as a REPLY to the sticker
+    // This visually links the text to the sticker and ensures it appears directly under it.
     if (caption && caption.trim().length > 0) {
       await new Promise((r) => setTimeout(r, CAPTION_DELAY_MS));
-      await sock!.sendMessage(jid, {
-        text: caption,
-      });
+      await sock!.sendMessage(
+        jid,
+        { text: caption },
+        { quoted: sentMsg }
+      );
     }
 
     logger.info(
