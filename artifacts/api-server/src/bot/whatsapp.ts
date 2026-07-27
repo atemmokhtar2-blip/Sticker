@@ -129,8 +129,8 @@ async function onBatchComplete(jid: string): Promise<void> {
   await sendText(
     jid,
     `✅ تم استلام ${count} ${count === 1 ? "صورة" : "صورة"}.\n\n` +
-      `✍️ أرسل الآن النص الذي تريده أن يظهر أسفل ${count === 1 ? "الملصق" : "الملصقات"}.\n\n` +
-      `💡 سيتم إرسال النص كرسالة مرتبطة (Reply) بالملصق لضمان ظهوره بالأسفل مباشرة.`
+      `✍️ أرسل الآن النص (Caption) الذي تريده أسفل ${count === 1 ? "الملصق" : "الملصقات"}.\n\n` +
+      `🌟 سيتم ربط النص بالملصق بشكل احترافي لضمان ظهوره بالأسفل مباشرة بدون أي تعديل على جودة الصورة.`
   );
 }
 
@@ -151,13 +151,22 @@ async function sendStickerWithCaption(
     });
 
     // 2. Send caption text right after as a REPLY to the sticker
-    // This visually links the text to the sticker and ensures it appears directly under it.
+    // This is the most reliable "Global Way" to pair text with a sticker in WhatsApp.
+    // It ensures the caption is visually attached to the sticker and doesn't get lost in group chats.
     if (caption && caption.trim().length > 0) {
+      // Tiny delay ensures the sticker arrives first
       await new Promise((r) => setTimeout(r, CAPTION_DELAY_MS));
+      
       await sock!.sendMessage(
-        jid,
-        { text: caption },
-        { quoted: sentMsg }
+        jid, 
+        { 
+          text: caption,
+          // Using mentions or links in caption works here too
+        }, 
+        { 
+          quoted: sentMsg,
+          // ephemeralExpiration: 604800 // Optional: match chat's ephemeral setting if needed
+        }
       );
     }
 
