@@ -4,6 +4,14 @@ import { startBot } from "./bot/whatsapp";
 import fs from "node:fs";
 import path from "node:path";
 
+// Catch unhandled errors so the process doesn't silently die
+process.on("uncaughtException", (err) => {
+  logger.error({ err }, "Uncaught exception — process will continue");
+});
+process.on("unhandledRejection", (reason) => {
+  logger.error({ reason }, "Unhandled promise rejection — process will continue");
+});
+
 const rawPort = process.env["PORT"];
 
 if (!rawPort) {

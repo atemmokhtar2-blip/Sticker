@@ -83,7 +83,7 @@ async function downloadAndConvert(
       msg,
       "buffer",
       {},
-      { logger: baileysLogger, reuploadRequest: sock!.updateMediaMessage }
+      { logger: baileysLogger }
     )) as Buffer;
 
     if (!imageBuffer || imageBuffer.length === 0) {
