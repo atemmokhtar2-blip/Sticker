@@ -43,9 +43,9 @@ refresh();setInterval(refresh,2000);
 });
 
 // GET /api/bot/status
-router.get("/bot/status", (_req, res): void => {
-  const status = getBotStatus();
-  res.json(status);
+router.get("/bot/status", async (_req, res): Promise<void> => {
+  try { res.json(await getBotStatus()); }
+  catch { res.status(503).json({ error: "Bot status unavailable" }); }
 });
 
 // GET /api/settings
