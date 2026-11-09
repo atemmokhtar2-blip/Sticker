@@ -16,7 +16,6 @@ onlyBuiltDependencies:
   - msw
   - unrs-resolver
   - '@whiskeysockets/baileys'
-  - better-sqlite3
   - protobufjs
   - sharp
 
