@@ -316,6 +316,7 @@ async function startConnection(): Promise<void> {
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;
     await handleIncomingMessages(messages);
+    await backupSessionToDb();
   });
 }
 
