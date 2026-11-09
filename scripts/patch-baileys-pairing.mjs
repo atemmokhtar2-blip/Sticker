@@ -34,15 +34,32 @@ for (const packageDir of packageDirs) {
   if (end < 0) throw new Error("Could not isolate Baileys pairing-code method");
 
   const method = source.slice(start, end);
-  if (method.includes("await query({")) {
+  const queryIndex = method.indexOf("await query({");
+  const meIndex = method.indexOf("authState.creds.me =");
+  const emitIndex = method.indexOf("ev.emit('creds.update', authState.creds);");
+  if (queryIndex >= 0 && meIndex > queryIndex && emitIndex > queryIndex) {
     console.log("Baileys pairing acknowledgement patch is already present");
     continue;
   }
-  if (!method.includes("await sendNode({")) {
+  if (queryIndex < 0 && !method.includes("await sendNode({")) {
     throw new Error("Expected fire-and-forget pairing IQ was not found; refusing unsafe patch");
   }
 
-  const patchedMethod = method.replace("await sendNode({", "await query({");
+  let patchedMethod = method.replace("await sendNode({", "await query({");
+  const earlyMeAssignment = /authState\\.creds\\.me\\s*=\\s*\\{\\s*id:\\s*jidEncode\\(phoneNumber,\\s*['"]s\\.whatsapp\\.net['"]\\),\\s*name:\\s*['"]~['"]\\s*\\};?\\s*/;
+  if (!earlyMeAssignment.test(patchedMethod)) {
+    throw new Error("Could not safely locate the pre-acknowledgement device identity assignment");
+  }
+  patchedMethod = patchedMethod.replace(earlyMeAssignment, "");
+  patchedMethod = patchedMethod.replace("ev.emit('creds.update', authState.creds);", "");
+  const returnMarker = "return authState.creds.pairingCode;";
+  if (!patchedMethod.includes(returnMarker)) {
+    throw new Error("Could not locate pairing-code return point");
+  }
+  patchedMethod = patchedMethod.replace(
+    returnMarker,
+    "authState.creds.me = { id: jidEncode(phoneNumber, 's.whatsapp.net'), name: '~' };\\n\\t\\tev.emit('creds.update', authState.creds);\\n\\t\\treturn pairingCode;"
+  );
   const patchedSource = source.slice(0, start) + patchedMethod + source.slice(end);
   fs.writeFileSync(socketFile, patchedSource, "utf8");
   patchedCount += 1;
