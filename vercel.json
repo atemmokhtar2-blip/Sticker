@@ -1,0 +1,23 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "pnpm --filter @workspace/api-server run build",
+  "functions": {
+    "api/index.ts": {
+      "maxDuration": 300
+    }
+  },
+  "daemons": {
+    "whatsapp": {
+      "root": ".",
+      "entrypoint": "Dockerfile.vercel",
+      "command": [
+        "node",
+        "--enable-source-maps",
+        "artifacts/api-server/dist/worker.mjs"
+      ],
+      "instances": {
+        "iad1": 1
+      }
+    }
+  }
+}
