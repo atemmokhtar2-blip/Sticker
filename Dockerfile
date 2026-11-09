@@ -3,7 +3,7 @@
 # Multi-stage build with proper pnpm workspace symlink handling
 # ============================================================================
 
-# ---- Stage 1: Install dependencies (including native compilation) ----
+# ---- Stage 1: Install dependencies ----
 FROM node:22-bookworm AS deps
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -20,7 +20,7 @@ COPY tsconfig.base.json tsconfig.json ./
 COPY artifacts/ artifacts/
 COPY lib/ lib/
 
-# Install all dependencies (pnpm install compiles native modules and creates symlinks)
+# Install dependencies and refresh the workspace lockfile for the Neon driver
 RUN pnpm install --no-frozen-lockfile
 
 # ---- Stage 2: Build the application ----
@@ -40,7 +40,7 @@ RUN rm -rf artifacts/api-server/src \
 # ---- Stage 3: Production runtime ----
 FROM node:22-bookworm AS production
 
-# Install runtime SQLite library and wget for healthcheck
+# Install wget for the runtime healthcheck
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     && rm -rf /var/lib/apt/lists/*
