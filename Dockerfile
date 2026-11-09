@@ -7,7 +7,7 @@
 FROM node:22-bookworm AS deps
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-dev make g++ pkg-config libsqlite3-dev \
+    python3 python3-dev make g++ pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 RUN corepack enable
@@ -21,7 +21,7 @@ COPY artifacts/ artifacts/
 COPY lib/ lib/
 
 # Install all dependencies (pnpm install compiles native modules and creates symlinks)
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --no-frozen-lockfile
 
 # ---- Stage 2: Build the application ----
 FROM deps AS builder
@@ -42,7 +42,6 @@ FROM node:22-bookworm AS production
 
 # Install runtime SQLite library and wget for healthcheck
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libsqlite3-0 \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
