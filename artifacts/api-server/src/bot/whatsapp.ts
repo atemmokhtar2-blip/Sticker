@@ -31,6 +31,8 @@ let _linkingCode: string | null = null;
 let _qrCode: string | null = null;
 let _linkedPhone: string | null = null;
 let _pairingError: string | null = null;
+let _hasRegisteredSession = false;
+let _lastDisconnectCode: number | null = null;
 let reconnecting = false;
 
 const processingMessages = new Set<string>();
@@ -38,7 +40,7 @@ const processingUsers = new Set<string>();
 let activeConversions = 0;
 
 export function getBotStatus() {
-  return { status: _status, linkingCode: _linkingCode, qrCode: _qrCode, phone: _linkedPhone, pairingError: _pairingError };
+  return { status: _status, linkingCode: _linkingCode, qrCode: _qrCode, phone: _linkedPhone, pairingError: _pairingError, hasRegisteredSession: _hasRegisteredSession, lastDisconnectCode: _lastDisconnectCode };
 }
 
 async function sendText(jid: string, text: string, quotedMsg?: WAMessage): Promise<void> {
@@ -245,6 +247,8 @@ async function startConnection(): Promise<void> {
   const { state, saveCreds } = await useMultiFileAuthState(SESSIONS_DIR);
   const savedPhone = state.creds.me?.id?.split(":")[0]?.split("@")[0] ?? "";
   const phoneNumber = getContactPhone(savedPhone);
+  _hasRegisteredSession = state.creds.registered;
+  _lastDisconnectCode = null;
   _status = "connecting";
   _linkingCode = null;
   _qrCode = null;
@@ -287,6 +291,13 @@ async function startConnection(): Promise<void> {
 
     if (connection === "close") {
       const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
+      _lastDisconnectCode = statusCode ?? null;
+      const disconnectMessage = lastDisconnect?.error?.message ?? "Unknown connection error";
+      if (statusCode === DisconnectReason.loggedOut) {
+        _pairingError = "WhatsApp رفض الجلسة المحفوظة (logged out). يلزم مسح الجلسة القديمة ثم الربط من جديد.";
+      } else if (!_qrCode) {
+        _pairingError = `انقطع اتصال واتساب قبل إنشاء QR. رمز الخطأ: ${statusCode ?? "غير معروف"} — ${disconnectMessage}`;
+      }
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
       _status = "disconnected";
       _linkingCode = null;
