@@ -18,7 +18,7 @@ main{width:min(100%,430px);text-align:center;background:#1b2935;border:1px solid
 h2{margin:0 0 12px}p{color:#c5d0d8;line-height:1.8}#qr{display:inline-block;background:#fff;padding:14px;border-radius:12px;margin:12px auto;min-width:0}
 #status{font-weight:bold;color:#8ee6ad}.hint{font-size:13px;color:#aab8c3}#code{font-size:34px;letter-spacing:8px;font-weight:800;background:#fff;color:#15212b;border-radius:12px;padding:18px 12px;margin:18px auto;direction:ltr;min-height:74px}
 </style></head>
-<body><main><h2>ربط بوت Sticker بواتساب</h2><p id="status">جاري تجهيز كود الربط...</p><div id="code">•••• ••••</div><p id="hint" class="hint">افتح واتساب ← الأجهزة المرتبطة ← ربط جهاز ← الربط برقم الهاتف، ثم أدخل الكود المكوّن من 8 أرقام.</p></main>
+<body><main><h2>ربط بوت Sticker بواتساب</h2><p id="status">جاري تجهيز كود الربط...</p><div id="code">•••• ••••</div><p id="hint" class="hint">افتح واتساب ← الأجهزة المرتبطة ← ربط جهاز ← الربط برقم الهاتف، ثم أدخل الكود المكوّن من 8 أحرف وأرقام.</p></main>
 <script>
 const statusEl=document.getElementById('status'), codeEl=document.getElementById('code');
 let lastCode='';
@@ -28,8 +28,8 @@ async function refresh(){
   if(d.status==='connected'){statusEl.textContent='✅ واتساب متصل بالفعل';codeEl.textContent='متصل';lastCode='';}
   else if(d.linkingCode){
    statusEl.textContent='أدخل الكود التالي في واتساب الآن';
-   const formatted=String(d.linkingCode).replace(/[^0-9]/g,'');
-   codeEl.textContent=formatted.length===8?formatted.slice(0,4)+' '+formatted.slice(4):formatted;
+   const formatted=String(d.linkingCode).replace(/[^A-Z0-9]/gi,'').toUpperCase();
+   codeEl.textContent=formatted.length===8?formatted.slice(0,4)+' '+formatted.slice(4):'';
    lastCode=formatted;
   }else if(d.pairingError){statusEl.textContent='تعذر إنشاء كود الربط: '+d.pairingError;codeEl.textContent='';}
   else if(d.hasRegisteredSession){statusEl.textContent='تم العثور على جلسة محفوظة. حالة الاتصال: '+d.status+(d.lastDisconnectCode?' — '+d.lastDisconnectCode:'');codeEl.textContent='';}
