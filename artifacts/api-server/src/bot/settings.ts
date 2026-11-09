@@ -80,14 +80,15 @@ export type StickerUser = {
 
 export function ensureStickerUser(userId: string): StickerUser {
   const db = getDb();
+  const inserted = db.prepare(
+    "INSERT OR IGNORE INTO sticker_users (user_id, created_at, mode, daily_date, daily_count) VALUES (?, ?, 'awaiting_choice', ?, 0)",
+  ).run(userId, new Date().toISOString(), cairoDate());
+  if (inserted.changes > 0) return { isNew: true, mode: "awaiting_choice" };
+
   const existing = db.prepare("SELECT mode FROM sticker_users WHERE user_id = ?").get(userId) as
     | { mode: StickerUser["mode"] }
     | undefined;
-  if (existing) return { isNew: false, mode: existing.mode };
-  db.prepare(
-    "INSERT INTO sticker_users (user_id, created_at, mode, daily_date, daily_count) VALUES (?, ?, 'awaiting_choice', ?, 0)",
-  ).run(userId, new Date().toISOString(), cairoDate());
-  return { isNew: true, mode: "awaiting_choice" };
+  return { isNew: false, mode: existing?.mode ?? "awaiting_choice" };
 }
 
 export function setStickerUserMode(
