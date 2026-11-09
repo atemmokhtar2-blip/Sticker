@@ -264,29 +264,8 @@ async function startConnection(): Promise<void> {
     defaultQueryTimeoutMs: 60_000,
   });
 
-  // Only request a fresh pairing code when no registered session exists.
-  // A valid QR/pairing session is never deleted or reset by normal restarts.
-  if (!state.creds.registered) {
-    if (!phoneNumber) {
-      _pairingError = "PHONE_NUMBER is missing. Add it in Railway Variables in international format without +.";
-      logger.error({ err: _pairingError }, "WhatsApp pairing cannot start");
-      return;
-    }
-    setTimeout(async () => {
-      try {
-        if (!sock || sock.authState.creds.registered) return;
-        logger.info("No saved WhatsApp login; requesting WhatsApp pairing code");
-        const code = await sock.requestPairingCode(phoneNumber);
-        _linkingCode = code;
-        _pairingError = null;
-        logger.info({ pairingCode: code }, "WHATSAPP PAIRING CODE — enter this in WhatsApp Linked Devices");
-        console.log(`\n========== WHATSAPP PAIRING CODE: ${code} ==========\n`);
-      } catch (err: any) {
-        _pairingError = err?.message ?? String(err);
-        logger.error({ err: _pairingError }, "WhatsApp pairing request failed");
-      }
-    }, 15000);
-  }
+  // Baileys emits a QR string through connection.update when a fresh login is needed.
+  // Keep QR pairing as the single flow to avoid racing requestPairingCode() against QR generation.
 
   sock.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect, qr } = update;
