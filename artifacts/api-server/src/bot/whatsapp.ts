@@ -38,7 +38,6 @@ let _pairingError: string | null = null;
 let _hasRegisteredSession = false;
 let _lastDisconnectCode: number | null = null;
 let reconnecting = false;
-let pairingCodeTimer: NodeJS.Timeout | null = null;
 
 const processingMessages = new Set<string>();
 const processingUsers = new Set<string>();
@@ -300,30 +299,39 @@ async function startConnection(): Promise<void> {
   // Baileys requires a fresh, unregistered session and an international-format number.
 
   if (!state.creds.registered && phoneNumber) {
+    // A pairing attempt must be made only once per socket. Baileys stores the
+    // pairing secret in shared credentials; requesting another code while the
+    // first device-link flow is pending can overwrite the secret and invalidate
+    // the response from WhatsApp. A fresh socket/session is required for retry.
+    let pairingRequestStarted = false;
     const requestPairingCode = async (): Promise<void> => {
-      if (!sock || _status !== "connecting" || state.creds.registered) return;
+      if (
+        pairingRequestStarted ||
+        !sock ||
+        _status !== "connecting" ||
+        state.creds.registered
+      ) return;
+
+      pairingRequestStarted = true;
       try {
-        // Pairing codes expire quickly; refresh before expiry until linking completes.
-        _linkingCode = null;
-        await persistBotStatus();
+        logger.info("Starting a single WhatsApp pairing-code request");
         const code = await sock.requestPairingCode(phoneNumber);
+        if (!/^[A-Z0-9]{8}$/.test(code)) {
+          throw new Error("WhatsApp returned an invalid pairing-code format");
+        }
         _linkingCode = code;
         _qrCode = null;
         _pairingError = null;
-        logger.info("WhatsApp 8-digit pairing code generated");
+        logger.info("WhatsApp pairing-code request returned an 8-character code");
         await persistBotStatus();
       } catch (err) {
         _linkingCode = null;
         _pairingError = err instanceof Error ? err.message : String(err);
-        logger.error({ err }, "Failed to generate WhatsApp pairing code");
+        logger.error({ err }, "WhatsApp pairing-code request failed");
         await persistBotStatus();
-      } finally {
-        if (sock && _status === "connecting" && !state.creds.registered) {
-          pairingCodeTimer = setTimeout(() => void requestPairingCode(), 45_000);
-        }
       }
     };
-    pairingCodeTimer = setTimeout(() => void requestPairingCode(), 5000);
+    setTimeout(() => void requestPairingCode(), 8000);
   }
 
   sock.ev.on("connection.update", async (update) => {
@@ -335,8 +343,6 @@ async function startConnection(): Promise<void> {
       await persistBotStatus();
     }
     if (connection === "open") {
-      if (pairingCodeTimer) clearTimeout(pairingCodeTimer);
-      pairingCodeTimer = null;
       _status = "connected";
       _linkingCode = null;
       _qrCode = null;
@@ -375,7 +381,13 @@ async function startConnection(): Promise<void> {
         reconnecting = true;
         setTimeout(async () => {
           try {
-            if (!shouldReconnect) {
+            if (!state.creds.registered) {
+              // Never carry partial pairing credentials into a new socket. They
+              // may contain an abandoned pairing secret from the previous attempt.
+              fs.rmSync(SESSIONS_DIR, { recursive: true, force: true });
+              fs.mkdirSync(SESSIONS_DIR, { recursive: true });
+              logger.warn("Unregistered partial pairing state cleared before retry");
+            } else if (!shouldReconnect) {
               await clearSessionFromDb("main_session");
               fs.rmSync(SESSIONS_DIR, { recursive: true, force: true });
               fs.mkdirSync(SESSIONS_DIR, { recursive: true });
