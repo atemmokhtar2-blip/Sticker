@@ -265,7 +265,11 @@ async function startConnection(): Promise<void> {
   // Only request a fresh pairing code when no registered session exists.
   // A valid QR/pairing session is never deleted or reset by normal restarts.
   if (!state.creds.registered) {
-    if (!phoneNumber) throw new Error("PHONE_NUMBER is required for first-time WhatsApp pairing. Add it in international format without +.");
+    if (!phoneNumber) {
+      _pairingError = "PHONE_NUMBER is missing. Add it in Railway Variables in international format without +.";
+      logger.error({ err: _pairingError }, "WhatsApp pairing cannot start");
+      return;
+    }
     setTimeout(async () => {
       try {
         if (!sock || sock.authState.creds.registered) return;
