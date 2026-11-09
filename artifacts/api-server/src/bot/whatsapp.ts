@@ -381,7 +381,13 @@ async function startConnection(): Promise<void> {
 
   sock.ev.on("creds.update", async () => {
     await saveCreds();
-    await backupSessionToDb();
+    // Do not persist an unregistered pairing state before the phone approves the code.
+    // Restoring these partial credentials after a restart can trigger a 401 login rejection.
+    if (state.creds.registered) {
+      await backupSessionToDb();
+    } else {
+      logger.info("Skipping WhatsApp session backup until device pairing is confirmed");
+    }
   });
 
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
