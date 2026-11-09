@@ -55,7 +55,6 @@ function getContactPhone(): string {
 
 async function sendWelcomeMenu(jid: string): Promise<void> {
   if (!sock) return;
-  const phone = getContactPhone();
   const payload = {
     text:
       "👋 أهلاً بيك في Sticker!\n\n" +
