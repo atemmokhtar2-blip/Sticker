@@ -44,6 +44,17 @@ export async function initDatabase(): Promise<void> {
         );
         CREATE INDEX IF NOT EXISTS sticker_history_user_created_idx
           ON sticker_history(user_id, created_at DESC);
+        CREATE TABLE IF NOT EXISTS bot_runtime_state (
+          id TEXT PRIMARY KEY,
+          status TEXT NOT NULL DEFAULT 'disconnected',
+          linking_code TEXT,
+          qr_code TEXT,
+          phone TEXT,
+          pairing_error TEXT,
+          has_registered_session BOOLEAN NOT NULL DEFAULT FALSE,
+          last_disconnect_code INTEGER,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
         CREATE TABLE IF NOT EXISTS whatsapp_sessions (
           id TEXT PRIMARY KEY,
           data JSONB NOT NULL,
@@ -215,4 +226,52 @@ export async function getSessionFromDb(id: string): Promise<string | null> {
 export async function clearSessionFromDb(id: string): Promise<void> {
   await ready();
   await pool.query("DELETE FROM whatsapp_sessions WHERE id=$1", [id]);
+}
+
+
+export type BotRuntimeState = {
+  status: "disconnected" | "connecting" | "connected";
+  linkingCode: string | null;
+  qrCode: string | null;
+  phone: string | null;
+  pairingError: string | null;
+  hasRegisteredSession: boolean;
+  lastDisconnectCode: number | null;
+};
+
+export async function saveBotRuntimeState(state: BotRuntimeState): Promise<void> {
+  await ready();
+  await pool.query(
+    `INSERT INTO bot_runtime_state
+      (id, status, linking_code, qr_code, phone, pairing_error, has_registered_session, last_disconnect_code, updated_at)
+     VALUES ('main', $1, $2, $3, $4, $5, $6, $7, NOW())
+     ON CONFLICT(id) DO UPDATE SET
+       status=EXCLUDED.status,
+       linking_code=EXCLUDED.linking_code,
+       qr_code=EXCLUDED.qr_code,
+       phone=EXCLUDED.phone,
+       pairing_error=EXCLUDED.pairing_error,
+       has_registered_session=EXCLUDED.has_registered_session,
+       last_disconnect_code=EXCLUDED.last_disconnect_code,
+       updated_at=NOW()`,
+    [state.status, state.linkingCode, state.qrCode, state.phone, state.pairingError, state.hasRegisteredSession, state.lastDisconnectCode],
+  );
+}
+
+export async function getBotRuntimeState(): Promise<BotRuntimeState> {
+  await ready();
+  const result = await pool.query("SELECT status, linking_code, qr_code, phone, pairing_error, has_registered_session, last_disconnect_code FROM bot_runtime_state WHERE id='main'");
+  const row = result.rows[0];
+  if (!row) {
+    return { status: "disconnected", linkingCode: null, qrCode: null, phone: null, pairingError: null, hasRegisteredSession: false, lastDisconnectCode: null };
+  }
+  return {
+    status: row.status as BotRuntimeState["status"],
+    linkingCode: row.linking_code ?? null,
+    qrCode: row.qr_code ?? null,
+    phone: row.phone ?? null,
+    pairingError: row.pairing_error ?? null,
+    hasRegisteredSession: Boolean(row.has_registered_session),
+    lastDisconnectCode: row.last_disconnect_code == null ? null : Number(row.last_disconnect_code),
+  };
 }
