@@ -32,8 +32,10 @@ async function refresh(){
    statusEl.textContent='امسح رمز QR من واتساب خلال الوقت المتاح';
    if(lastQr!==d.qrCode){qrEl.innerHTML='';new QRCode(qrEl,{text:d.qrCode,width:260,height:260,correctLevel:QRCode.CorrectLevel.M});lastQr=d.qrCode;}
   }else if(d.linkingCode){statusEl.textContent='كود الربط: '+d.linkingCode;qrEl.innerHTML='';}
-  else if(d.pairingError){statusEl.textContent='تعذر بدء الربط: '+d.pairingError;qrEl.innerHTML='';}
-  else{statusEl.textContent='جاري تجهيز رمز QR...';}
+  else if(d.pairingError){statusEl.textContent='تعذر إنشاء QR: '+d.pairingError;qrEl.innerHTML='';}
+  else if(d.hasRegisteredSession){statusEl.textContent='تم العثور على جلسة واتساب محفوظة، لكن الاتصال لم يكتمل. حالة الاتصال: '+d.status+(d.lastDisconnectCode?' — رمز الخطأ: '+d.lastDisconnectCode:'')+'. نحتاج فحص الجلسة القديمة قبل إنشاء QR جديد.';qrEl.innerHTML='';}
+  else if(d.status==='disconnected'){statusEl.textContent='اتصال واتساب منقطع ولم يصل QR بعد. راجع سجل Railway لمعرفة سبب الانقطاع.';qrEl.innerHTML='';}
+  else{statusEl.textContent='جاري الاتصال بخوادم واتساب وانتظار QR... الحالة: '+d.status;}
  }catch(e){statusEl.textContent='تعذر الاتصال بالخادم، جاري إعادة المحاولة...';}
 }
 refresh();setInterval(refresh,2000);
