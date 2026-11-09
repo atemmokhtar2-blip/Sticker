@@ -19,5 +19,6 @@
         "iad1": 1
       }
     }
-  }
+  },
+  "installCommand": "pnpm install --no-frozen-lockfile"
 }
