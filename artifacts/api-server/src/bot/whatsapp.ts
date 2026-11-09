@@ -57,8 +57,8 @@ async function sendWelcomeMenu(jid: string): Promise<void> {
   if (!sock) return;
   const payload = {
     text:
-      "👋 أهلاً بيك في Sticker!\n\n" +
-      "حوّل صورك إلى ملصقات واتساب بسهولة.\n\n" +
+      "👋 أهلاً بيك في Sticker!\\n\\n" +
+      "حوّل صورك إلى ملصقات واتساب بسهولة.\\n\\n" +
       "اختار من الأزرار اللي تحت:",
     footer: "Sticker • خدمة تحويل الصور إلى ملصقات",
     buttons: [
@@ -68,15 +68,13 @@ async function sendWelcomeMenu(jid: string): Promise<void> {
     headerType: 1,
   };
   try {
-    // Legacy interactive buttons are retained for broad WhatsApp client compatibility.
     await sock.sendMessage(jid, payload as any);
   } catch (err) {
     logger.warn({ err, jid }, "Interactive welcome buttons unavailable; sending text fallback");
     await sendText(
       jid,
-      "👋 أهلاً بيك في Sticker!\n\n" +
-        "1️⃣ تواصل مع المطور: https://wa.me/" + phone + "\n" +
-        "2️⃣ استخدام البوت: ابعت كلمة (استخدام البوت) وابدأ إرسال الصور.",
+      "👋 أهلاً بيك في Sticker!\\n\\n" +
+        "اكتب (تواصل مع المطور) علشان تبعت رسالتك هنا، أو (استخدام البوت) لبدء تحويل الصور.",
     );
   }
 }
@@ -85,8 +83,10 @@ async function handleMenuChoice(jid: string, choice: string): Promise<boolean> {
   const normalized = choice.trim().toLowerCase();
   if (["contact_developer", "contact", "تواصل مع المطور", "تواصل", "1"].includes(normalized)) {
     setStickerUserMode(jid, "contact");
-    const phone = getContactPhone();
-    await sendText(jid, "👨‍💻 للتواصل مع المطور، افتح المحادثة من هنا:\nhttps://wa.me/" + phone);
+    await sendText(
+      jid,
+      "👨‍💻 تم تحويل المحادثة لوضع التواصل مع المطور. ابعت رسالتك هنا، وهيتمكن المطور من متابعتها على نفس الرقم.\\nللعودة لاستخدام البوت اكتب: استخدام البوت.",
+    );
     return true;
   }
   if (["use_sticker_bot", "use", "استخدام البوت", "استخدم البوت", "2"].includes(normalized)) {
