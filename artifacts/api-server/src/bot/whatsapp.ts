@@ -1,7 +1,6 @@
 import makeWASocket, {
   useMultiFileAuthState,
   DisconnectReason,
-  Browsers,
   downloadMediaMessage,
   type WASocket,
   type WAMessage,
@@ -12,132 +11,229 @@ import pino from "pino";
 import { logger } from "../lib/logger";
 import fs from "node:fs";
 import { convertToSticker } from "./image";
-import { getSetting, saveSessionToDb, getSessionFromDb, clearSessionFromDb } from "./settings";
+import {
+  getSetting,
+  saveSessionToDb,
+  getSessionFromDb,
+  ensureStickerUser,
+  setStickerUserMode,
+  reserveDailySticker,
+  releaseDailySticker,
+} from "./settings";
 
 const SESSIONS_DIR = process.env["SESSIONS_DIR"] ?? path.resolve(process.cwd(), "sessions");
-
-// Silent pino logger for baileys internals
+const DAILY_STICKER_LIMIT = 12;
 const baileysLogger = pino({ level: "silent" });
 
 let sock: WASocket | null = null;
 let _status: "disconnected" | "connecting" | "connected" = "disconnected";
 let _linkingCode: string | null = null;
 let _linkedPhone: string | null = null;
+let reconnecting = false;
 
-// Track in-flight processing to avoid duplicate deliveries
-const processingSet = new Set<string>();
-
-// ─── Public API ─────────────────────────────────────────────────────────────
+const processingMessages = new Set<string>();
+const processingUsers = new Set<string>();
 
 export function getBotStatus() {
-  return {
-    status: _status,
-    linkingCode: _linkingCode,
-    phone: _linkedPhone,
-  };
+  return { status: _status, linkingCode: _linkingCode, phone: _linkedPhone };
 }
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 async function sendText(jid: string, text: string, quotedMsg?: WAMessage): Promise<void> {
   if (!sock) return;
   try {
-    if (quotedMsg) {
-      await sock.sendMessage(jid, { text }, { quoted: quotedMsg });
-    } else {
-      await sock.sendMessage(jid, { text });
-    }
+    if (quotedMsg) await sock.sendMessage(jid, { text }, { quoted: quotedMsg });
+    else await sock.sendMessage(jid, { text });
   } catch (err) {
-    logger.warn({ err }, "Failed to send text message");
+    logger.warn({ err, jid }, "Failed to send text message");
   }
 }
 
-/** Download + convert one image to WebP sticker with watermark. */
-async function processAndSendSticker(
-  jid: string,
-  msg: WAMessage,
-): Promise<void> {
-  const msgId = msg.key.id!;
-  if (processingSet.has(msgId)) return;
-  processingSet.add(msgId);
+function getContactPhone(): string {
+  return (process.env["PHONE_NUMBER"] ?? getSetting("phone_number") ?? "201505324892").replace(/\D/g, "");
+}
+
+async function sendWelcomeMenu(jid: string): Promise<void> {
+  if (!sock) return;
+  const phone = getContactPhone();
+  const payload = {
+    text:
+      "👋 أهلاً بيك في Sticker!\n\n" +
+      "حوّل صورك إلى ملصقات واتساب بسهولة.\n\n" +
+      "اختار من الأزرار اللي تحت:",
+    footer: "Sticker • خدمة تحويل الصور إلى ملصقات",
+    buttons: [
+      { buttonId: "contact_developer", buttonText: { displayText: "👨‍💻 تواصل مع المطور" }, type: 1 },
+      { buttonId: "use_sticker_bot", buttonText: { displayText: "🎨 استخدام البوت" }, type: 1 },
+    ],
+    headerType: 1,
+  };
   try {
-    logger.info({ msgId }, "Processing image to sticker...");
+    // Legacy interactive buttons are retained for broad WhatsApp client compatibility.
+    await sock.sendMessage(jid, payload as any);
+  } catch (err) {
+    logger.warn({ err, jid }, "Interactive welcome buttons unavailable; sending text fallback");
+    await sendText(
+      jid,
+      "👋 أهلاً بيك في Sticker!\n\n" +
+        "1️⃣ تواصل مع المطور: https://wa.me/" + phone + "\n" +
+        "2️⃣ استخدام البوت: ابعت كلمة (استخدام البوت) وابدأ إرسال الصور.",
+    );
+  }
+}
+
+async function handleMenuChoice(jid: string, choice: string): Promise<boolean> {
+  const normalized = choice.trim().toLowerCase();
+  if (["contact_developer", "contact", "تواصل مع المطور", "تواصل", "1"].includes(normalized)) {
+    setStickerUserMode(jid, "contact");
+    const phone = getContactPhone();
+    await sendText(jid, "👨‍💻 للتواصل مع المطور، افتح المحادثة من هنا:\nhttps://wa.me/" + phone);
+    return true;
+  }
+  if (["use_sticker_bot", "use", "استخدام البوت", "استخدم البوت", "2"].includes(normalized)) {
+    setStickerUserMode(jid, "active");
+    await sendText(
+      jid,
+      "🎨 تمام! البوت جاهز ليك.\n\n" +
+        "ابعت أي صورة هنا، وأنا هحوّلها لستيكر واتساب تلقائيًا.\n" +
+        "الحد اليومي: " + DAILY_STICKER_LIMIT + " ستيكر لكل مستخدم.\n\n" +
+        "اكتب (القائمة) لعرض الاختيارات من جديد.",
+    );
+    return true;
+  }
+  return false;
+}
+
+async function backupSessionToDb(): Promise<void> {
+  try {
+    if (!fs.existsSync(SESSIONS_DIR)) return;
+    const files: Record<string, string> = {};
+    for (const file of fs.readdirSync(SESSIONS_DIR)) {
+      const filePath = path.join(SESSIONS_DIR, file);
+      if (fs.lstatSync(filePath).isFile()) {
+        files[file] = fs.readFileSync(filePath).toString("base64");
+      }
+    }
+    if (Object.keys(files).length > 0) {
+      saveSessionToDb("main_session", JSON.stringify(files));
+      logger.info({ fileCount: Object.keys(files).length }, "WhatsApp session snapshot saved");
+    }
+  } catch (err) {
+    logger.error({ err }, "Failed to back up WhatsApp session");
+  }
+}
+
+async function processAndSendSticker(jid: string, msg: WAMessage): Promise<void> {
+  const msgId = msg.key.id ?? `${jid}-${Date.now()}`;
+  if (processingMessages.has(msgId) || processingUsers.has(jid)) return;
+  processingMessages.add(msgId);
+  processingUsers.add(jid);
+
+  const quota = reserveDailySticker(jid);
+  if (!quota.allowed) {
+    await sendText(jid, "⏳ وصلت للحد اليومي (" + DAILY_STICKER_LIMIT + " ستيكر).\nارجع بكرة وهتقدر تستخدم البوت من جديد.");
+    processingMessages.delete(msgId);
+    processingUsers.delete(jid);
+    return;
+  }
+
+  try {
+    logger.info({ msgId, jid }, "Processing user image");
     const imageBuffer = (await downloadMediaMessage(
       msg,
       "buffer",
       {},
-      { logger: baileysLogger, reuploadRequest: async (m: WAMessage) => m }
+      { logger: baileysLogger, reuploadRequest: async (message: WAMessage) => message },
     )) as Buffer;
 
-    if (!imageBuffer || imageBuffer.length === 0) {
-      logger.warn({ msgId }, "Empty image buffer — skipping");
-      return;
-    }
-
+    if (!imageBuffer?.length) throw new Error("Empty image buffer");
     const stickerBuffer = await convertToSticker(imageBuffer);
-    
-    await sock!.sendMessage(jid, {
-      sticker: stickerBuffer,
-    });
+    if (!sock) throw new Error("WhatsApp connection is not ready");
 
-    logger.info({ jid, msgId }, "✅ Sticker sent successfully");
+    await sock.sendMessage(jid, { sticker: stickerBuffer });
+    logger.info({ jid, msgId, remaining: quota.remaining }, "Sticker delivered");
+
+    if (quota.remaining === 0) {
+      await sendText(jid, "✅ ده آخر ستيكر متاح ليك النهارده. الحد هيتجدد بكرة.");
+    } else {
+      await sendText(jid, "✅ اتعمل الستيكر بنجاح!\nالمتبقي ليك النهارده: " + quota.remaining + " من " + DAILY_STICKER_LIMIT);
+    }
   } catch (err) {
-    logger.error({ err, msgId }, "Error processing sticker");
+    releaseDailySticker(jid);
+    logger.error({ err, msgId, jid }, "Sticker conversion/delivery failed");
+    await sendText(jid, "⚠️ مقدرتش أحوّل الصورة دي. جرّب صورة تانية، ومش هيتخصم من حدك اليومي.");
   } finally {
-    processingSet.delete(msgId);
+    processingMessages.delete(msgId);
+    processingUsers.delete(jid);
   }
 }
-
-// ─── Incoming message handler ────────────────────────────────────────────────
 
 async function handleIncomingMessages(messages: WAMessage[]): Promise<void> {
-  const incoming = messages.filter((m) => m.message);
-
-  for (const msg of incoming) {
+  for (const msg of messages.filter((item) => item.message)) {
     const jid = msg.key.remoteJid;
-    if (!jid) continue;
+    if (!jid || jid === "status@broadcast" || jid.endsWith("@g.us") || msg.key.fromMe) continue;
+    const content = msg.message;
+    if (!content) continue;
 
-    const msgContent = msg.message;
-    if (!msgContent) continue;
+    const user = ensureStickerUser(jid);
+    if (user.isNew) {
+      await sendWelcomeMenu(jid);
+      continue;
+    }
 
-    const isImage = msgContent.imageMessage != null;
+    const buttonChoice =
+      content.buttonsResponseMessage?.selectedButtonId ??
+      content.templateButtonReplyMessage?.selectedId ??
+      content.listResponseMessage?.singleSelectReply?.selectedRowId ??
+      "";
+    const textMessage = content.conversation ?? content.extendedTextMessage?.text ?? "";
+    const choice = buttonChoice || textMessage;
 
-    if (isImage) {
-      // Process and send sticker immediately
+    if (choice.trim().toLowerCase() === "القائمة" || choice.trim().toLowerCase() === "menu") {
+      setStickerUserMode(jid, "awaiting_choice");
+      await sendWelcomeMenu(jid);
+      continue;
+    }
+
+    if (user.mode === "awaiting_choice" || buttonChoice) {
+      if (await handleMenuChoice(jid, choice)) continue;
+      if (user.mode === "awaiting_choice") {
+        await sendText(jid, "اختار من فضلك: (تواصل مع المطور) أو (استخدام البوت).");
+        continue;
+      }
+    }
+
+    if (content.imageMessage) {
       await processAndSendSticker(jid, msg);
+      continue;
+    }
+
+    if (textMessage.trim()) {
+      await sendText(jid, "📸 ابعت صورة علشان أحوّلها لستيكر.\nحدك اليومي 12 ستيكر. اكتب (القائمة) لعرض الاختيارات.");
     }
   }
 }
 
-// ─── Connection management ───────────────────────────────────────────────────
-
 async function startConnection(): Promise<void> {
-  if (!fs.existsSync(SESSIONS_DIR)) {
-    fs.mkdirSync(SESSIONS_DIR, { recursive: true });
-  }
+  if (!fs.existsSync(SESSIONS_DIR)) fs.mkdirSync(SESSIONS_DIR, { recursive: true });
 
   if (fs.readdirSync(SESSIONS_DIR).length === 0) {
-    logger.info("Sessions folder is empty, attempting to restore from DB...");
     const savedSession = getSessionFromDb("main_session");
     if (savedSession) {
       try {
-        const files = JSON.parse(savedSession);
+        const files = JSON.parse(savedSession) as Record<string, string>;
         for (const [filename, content] of Object.entries(files)) {
-          fs.writeFileSync(path.join(SESSIONS_DIR, filename), Buffer.from(content as string, "base64"));
+          if (filename.includes("/") || filename.includes("\\")) continue;
+          fs.writeFileSync(path.join(SESSIONS_DIR, filename), Buffer.from(content, "base64"), { mode: 0o600 });
         }
-        logger.info("✅ Session restored from DB successfully.");
+        logger.info("Existing WhatsApp session restored from database backup");
       } catch (err) {
-        logger.error({ err }, "Failed to restore session from DB");
+        logger.error({ err }, "Failed to restore WhatsApp session backup");
       }
     }
   }
 
   const { state, saveCreds } = await useMultiFileAuthState(SESSIONS_DIR);
-  const phoneNumber =
-    process.env["PHONE_NUMBER"] ??
-    getSetting("phone_number") ??
-    "201505324892";
-
+  const phoneNumber = getContactPhone();
   _status = "connecting";
   _linkingCode = null;
 
@@ -155,38 +251,32 @@ async function startConnection(): Promise<void> {
     defaultQueryTimeoutMs: 60_000,
   });
 
+  // Only request a fresh pairing code when no registered session exists.
+  // A valid QR/pairing session is never deleted or reset by normal restarts.
   if (!state.creds.registered) {
-    const cleanPhone = phoneNumber.replace(/\D/g, "");
-    
     setTimeout(async () => {
       try {
         if (!sock || sock.authState.creds.registered) return;
-        logger.info({ phone: cleanPhone }, "Requesting Pairing Code...");
-        const code = await sock.requestPairingCode(cleanPhone);
+        logger.info({ phone: phoneNumber }, "No saved WhatsApp login; requesting pairing code");
+        const code = await sock.requestPairingCode(phoneNumber);
         _linkingCode = code;
-        console.log(`\n🔥 NEW PAIRING CODE FOR ${cleanPhone}: ${code}\n`);
+        logger.info("WhatsApp pairing code generated");
+        console.log(`WHATSAPP PAIRING CODE: ${code}`);
       } catch (err: any) {
-        logger.error({ err: err.message, phone: cleanPhone }, "❌ Pairing request failed.");
-        if (err.output?.statusCode === 428 || err.message?.includes("Precondition Required")) {
-           logger.warn("Detected Precondition Required. Clearing sessions and restarting...");
-           if (fs.existsSync(SESSIONS_DIR)) {
-             fs.rmSync(SESSIONS_DIR, { recursive: true, force: true });
-           }
-           clearSessionFromDb("main_session");
-           process.exit(1);
-        }
+        logger.error({ err: err.message }, "WhatsApp pairing request failed");
       }
     }, 15000);
   }
 
   sock.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect } = update;
-
     if (connection === "open") {
       _status = "connected";
       _linkingCode = null;
       _linkedPhone = phoneNumber;
-      logger.info({ phone: phoneNumber }, "✅ WhatsApp Sticker Bot is CONNECTED and ready!");
+      reconnecting = false;
+      await backupSessionToDb();
+      logger.info({ phone: phoneNumber }, "WhatsApp Sticker service connected");
     }
 
     if (connection === "close") {
@@ -194,43 +284,28 @@ async function startConnection(): Promise<void> {
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
       _status = "disconnected";
       _linkingCode = null;
+      logger.warn({ statusCode, shouldReconnect }, "WhatsApp connection closed");
 
-      logger.warn({ statusCode, shouldReconnect }, "Connection closed");
-
-      if (shouldReconnect) {
-        logger.info("Reconnecting in 5 seconds...");
-        setTimeout(() => startConnection(), 5000);
-      } else {
-        logger.error(
-          "Logged out of WhatsApp. Delete the sessions/ folder and restart to re-link."
-        );
+      if (shouldReconnect && !reconnecting) {
+        reconnecting = true;
+        setTimeout(() => {
+          reconnecting = false;
+          void startConnection().catch((err) => logger.error({ err }, "WhatsApp reconnect failed"));
+        }, 5000);
+      } else if (!shouldReconnect) {
+        logger.error("WhatsApp logged out. Session retained for inspection; manual re-link is required.");
       }
     }
   });
 
   sock.ev.on("creds.update", async () => {
     await saveCreds();
-    try {
-      if (fs.existsSync(SESSIONS_DIR)) {
-        const files: Record<string, string> = {};
-        const fileList = fs.readdirSync(SESSIONS_DIR);
-        for (const file of fileList) {
-          const filePath = path.join(SESSIONS_DIR, file);
-          if (fs.lstatSync(filePath).isFile()) {
-            files[file] = fs.readFileSync(filePath).toString("base64");
-          }
-        }
-        const sessionData = JSON.stringify(files);
-        saveSessionToDb("main_session", sessionData);
-        logger.info("💾 Session backed up to DB successfully.");
-      }
-    } catch (err) {
-      logger.error({ err }, "Failed to backup session to DB");
-    }
+    await backupSessionToDb();
   });
 
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;
+    await backupSessionToDb();
     await handleIncomingMessages(messages);
   });
 }
