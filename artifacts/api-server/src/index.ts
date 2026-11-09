@@ -35,6 +35,8 @@ for (const dir of ["data", "sessions"]) {
   }
 }
 
+await initDatabase();
+
 app.listen(port, async (err) => {
   if (err) {
     logger.error({ err }, "Error listening on port");
@@ -43,7 +45,6 @@ app.listen(port, async (err) => {
 
   logger.info({ port }, "Server listening");
 
-  // Fail fast if Neon is not configured or its schema cannot be initialized.
-  await initDatabase();
+  // Start WhatsApp only after Neon has initialized successfully.
   await startBot();
 });
