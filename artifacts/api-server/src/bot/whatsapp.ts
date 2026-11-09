@@ -128,15 +128,13 @@ async function processAndSendSticker(jid: string, msg: WAMessage): Promise<void>
   processingMessages.add(msgId);
   processingUsers.add(jid);
 
-  const quota = reserveDailySticker(jid);
-  if (!quota.allowed) {
-    await sendText(jid, "⏳ وصلت للحد اليومي (" + DAILY_STICKER_LIMIT + " ستيكر).\nارجع بكرة وهتقدر تستخدم البوت من جديد.");
-    processingMessages.delete(msgId);
-    processingUsers.delete(jid);
-    return;
-  }
-
+  let quota: ReturnType<typeof reserveDailySticker> | null = null;
   try {
+    quota = reserveDailySticker(jid);
+    if (!quota.allowed) {
+      await sendText(jid, "⏳ وصلت للحد اليومي (" + DAILY_STICKER_LIMIT + " ستيكر).\\nارجع بكرة وهتقدر تستخدم البوت من جديد.");
+      return;
+    }
     logger.info({ msgId, jid }, "Processing user image");
     const imageBuffer = (await downloadMediaMessage(
       msg,
