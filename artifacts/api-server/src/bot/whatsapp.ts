@@ -158,7 +158,7 @@ async function processAndSendSticker(jid: string, msg: WAMessage): Promise<void>
       await sendText(jid, "✅ اتعمل الستيكر بنجاح!\nالمتبقي ليك النهارده: " + quota.remaining + " من " + DAILY_STICKER_LIMIT);
     }
   } catch (err) {
-    releaseDailySticker(jid);
+    if (quota?.allowed) releaseDailySticker(jid);
     logger.error({ err, msgId, jid }, "Sticker conversion/delivery failed");
     await sendText(jid, "⚠️ مقدرتش أحوّل الصورة دي. جرّب صورة تانية، ومش هيتخصم من حدك اليومي.");
   } finally {
@@ -194,12 +194,15 @@ async function handleIncomingMessages(messages: WAMessage[]): Promise<void> {
       continue;
     }
 
-    if (user.mode === "awaiting_choice" || buttonChoice) {
-      if (await handleMenuChoice(jid, choice)) continue;
-      if (user.mode === "awaiting_choice") {
-        await sendText(jid, "اختار من فضلك: (تواصل مع المطور) أو (استخدام البوت).");
-        continue;
-      }
+    if (await handleMenuChoice(jid, choice)) continue;
+    if (user.mode === "contact") {
+      // The same WhatsApp number is used by the developer; pause automation
+      // so the owner can reply manually until the user chooses to use the bot again.
+      continue;
+    }
+    if (user.mode === "awaiting_choice") {
+      await sendText(jid, "اختار من فضلك: (تواصل مع المطور) أو (استخدام البوت).");
+      continue;
     }
 
     if (content.imageMessage) {
