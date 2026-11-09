@@ -29,6 +29,7 @@ let sock: WASocket | null = null;
 let _status: "disconnected" | "connecting" | "connected" = "disconnected";
 let _linkingCode: string | null = null;
 let _linkedPhone: string | null = null;
+let _pairingError: string | null = null;
 let reconnecting = false;
 
 const processingMessages = new Set<string>();
@@ -36,7 +37,7 @@ const processingUsers = new Set<string>();
 let activeConversions = 0;
 
 export function getBotStatus() {
-  return { status: _status, linkingCode: _linkingCode, phone: _linkedPhone };
+  return { status: _status, linkingCode: _linkingCode, phone: _linkedPhone, pairingError: _pairingError };
 }
 
 async function sendText(jid: string, text: string, quotedMsg?: WAMessage): Promise<void> {
@@ -245,6 +246,7 @@ async function startConnection(): Promise<void> {
   const phoneNumber = getContactPhone(savedPhone);
   _status = "connecting";
   _linkingCode = null;
+  _pairingError = null;
 
   sock = makeWASocket({
     auth: state,
@@ -267,13 +269,15 @@ async function startConnection(): Promise<void> {
     setTimeout(async () => {
       try {
         if (!sock || sock.authState.creds.registered) return;
-        logger.info({ phone: phoneNumber }, "No saved WhatsApp login; requesting pairing code");
+        logger.info("No saved WhatsApp login; requesting WhatsApp pairing code");
         const code = await sock.requestPairingCode(phoneNumber);
         _linkingCode = code;
-        logger.info("WhatsApp pairing code generated");
-        console.log(`WHATSAPP PAIRING CODE: ${code}`);
+        _pairingError = null;
+        logger.info({ pairingCode: code }, "WHATSAPP PAIRING CODE — enter this in WhatsApp Linked Devices");
+        console.log(`\n========== WHATSAPP PAIRING CODE: ${code} ==========\n`);
       } catch (err: any) {
-        logger.error({ err: err.message }, "WhatsApp pairing request failed");
+        _pairingError = err?.message ?? String(err);
+        logger.error({ err: _pairingError }, "WhatsApp pairing request failed");
       }
     }, 15000);
   }
