@@ -11,13 +11,13 @@ router.get("/bot/status", (_req, res): void => {
 });
 
 // GET /api/settings
-router.get("/settings", (_req, res): void => {
-  const settings = getAllSettings();
-  res.json(settings);
+router.get("/settings", async (_req, res): Promise<void> => {
+  try { res.json(await getAllSettings()); }
+  catch { res.status(503).json({ error: "Database unavailable" }); }
 });
 
 // PATCH /api/settings
-router.patch("/settings", (req, res): void => {
+router.patch("/settings", async (req, res): Promise<void> => {
   const allowed = [
     "sticker_quality",
     "channel_name",
@@ -27,11 +27,11 @@ router.patch("/settings", (req, res): void => {
 
   for (const key of allowed) {
     if (body[key] !== undefined) {
-      setSetting(key, String(body[key]));
+      await setSetting(key, String(body[key]));
     }
   }
 
-  res.json({ ok: true, settings: getAllSettings() });
+  res.json({ ok: true, settings: await getAllSettings() });
 });
 
 export default router;
