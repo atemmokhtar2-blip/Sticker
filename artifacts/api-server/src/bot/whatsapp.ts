@@ -28,6 +28,7 @@ const baileysLogger = pino({ level: "silent" });
 let sock: WASocket | null = null;
 let _status: "disconnected" | "connecting" | "connected" = "disconnected";
 let _linkingCode: string | null = null;
+let _qrCode: string | null = null;
 let _linkedPhone: string | null = null;
 let _pairingError: string | null = null;
 let reconnecting = false;
@@ -37,7 +38,7 @@ const processingUsers = new Set<string>();
 let activeConversions = 0;
 
 export function getBotStatus() {
-  return { status: _status, linkingCode: _linkingCode, phone: _linkedPhone, pairingError: _pairingError };
+  return { status: _status, linkingCode: _linkingCode, qrCode: _qrCode, phone: _linkedPhone, pairingError: _pairingError };
 }
 
 async function sendText(jid: string, text: string, quotedMsg?: WAMessage): Promise<void> {
@@ -246,6 +247,7 @@ async function startConnection(): Promise<void> {
   const phoneNumber = getContactPhone(savedPhone);
   _status = "connecting";
   _linkingCode = null;
+  _qrCode = null;
   _pairingError = null;
 
   sock = makeWASocket({
@@ -287,10 +289,17 @@ async function startConnection(): Promise<void> {
   }
 
   sock.ev.on("connection.update", async (update) => {
-    const { connection, lastDisconnect } = update;
+    const { connection, lastDisconnect, qr } = update;
+    if (qr) {
+      _qrCode = qr;
+      _linkingCode = null;
+      _pairingError = null;
+      logger.info("WhatsApp QR code is ready; open /api/bot/qr to display it");
+    }
     if (connection === "open") {
       _status = "connected";
       _linkingCode = null;
+      _qrCode = null;
       _linkedPhone = phoneNumber;
       reconnecting = false;
       await backupSessionToDb();
@@ -302,6 +311,7 @@ async function startConnection(): Promise<void> {
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
       _status = "disconnected";
       _linkingCode = null;
+      _qrCode = null;
       logger.warn({ statusCode, shouldReconnect }, "WhatsApp connection closed");
 
       if (shouldReconnect && !reconnecting) {
