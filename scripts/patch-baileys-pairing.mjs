@@ -46,7 +46,7 @@ for (const packageDir of packageDirs) {
   }
 
   let patchedMethod = method.replace("await sendNode({", "await query({");
-  const earlyMeAssignment = /authState\\.creds\\.me\\s*=\\s*\\{\\s*id:\\s*jidEncode\\(phoneNumber,\\s*['"]s\\.whatsapp\\.net['"]\\),\\s*name:\\s*['"]~['"]\\s*\\};?\\s*/;
+  const earlyMeAssignment = /authState\.creds\.me\s*=\s*\{\s*id:\s*jidEncode\(phoneNumber,\s*['"]s\.whatsapp\.net['"]\),\s*name:\s*['"]~['"]\s*\};?\s*/;
   if (!earlyMeAssignment.test(patchedMethod)) {
     throw new Error("Could not safely locate the pre-acknowledgement device identity assignment");
   }
@@ -58,7 +58,7 @@ for (const packageDir of packageDirs) {
   }
   patchedMethod = patchedMethod.replace(
     returnMarker,
-    "authState.creds.me = { id: jidEncode(phoneNumber, 's.whatsapp.net'), name: '~' };\\n\\t\\tev.emit('creds.update', authState.creds);\\n\\t\\treturn pairingCode;"
+    "authState.creds.me = { id: jidEncode(phoneNumber, 's.whatsapp.net'), name: '~' };\n\t\tev.emit('creds.update', authState.creds);\n\t\treturn pairingCode;"
   );
   const patchedSource = source.slice(0, start) + patchedMethod + source.slice(end);
   fs.writeFileSync(socketFile, patchedSource, "utf8");
