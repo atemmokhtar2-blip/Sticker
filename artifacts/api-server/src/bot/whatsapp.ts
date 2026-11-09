@@ -354,8 +354,6 @@ async function startConnection(): Promise<void> {
     }
 
     if (connection === "close") {
-      if (pairingCodeTimer) clearTimeout(pairingCodeTimer);
-      pairingCodeTimer = null;
       const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
       _lastDisconnectCode = statusCode ?? null;
       const disconnectMessage = lastDisconnect?.error?.message ?? "Unknown connection error";
