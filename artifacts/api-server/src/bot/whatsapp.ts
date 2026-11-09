@@ -49,8 +49,8 @@ async function sendText(jid: string, text: string, quotedMsg?: WAMessage): Promi
   }
 }
 
-function getContactPhone(): string {
-  return (process.env["PHONE_NUMBER"] ?? getSetting("phone_number") ?? "201505324892").replace(/\D/g, "");
+function getContactPhone(fallback = ""): string {
+  return (process.env["PHONE_NUMBER"] ?? fallback).replace(/\D/g, "");
 }
 
 async function sendWelcomeMenu(jid: string): Promise<void> {
@@ -241,7 +241,8 @@ async function startConnection(): Promise<void> {
   }
 
   const { state, saveCreds } = await useMultiFileAuthState(SESSIONS_DIR);
-  const phoneNumber = getContactPhone();
+  const savedPhone = state.creds.me?.id?.split(":")[0]?.split("@")[0] ?? "";
+  const phoneNumber = getContactPhone(savedPhone);
   _status = "connecting";
   _linkingCode = null;
 
@@ -262,6 +263,7 @@ async function startConnection(): Promise<void> {
   // Only request a fresh pairing code when no registered session exists.
   // A valid QR/pairing session is never deleted or reset by normal restarts.
   if (!state.creds.registered) {
+    if (!phoneNumber) throw new Error("PHONE_NUMBER is required for first-time WhatsApp pairing. Add it in international format without +.");
     setTimeout(async () => {
       try {
         if (!sock || sock.authState.creds.registered) return;
