@@ -2,7 +2,6 @@ import { Pool } from "@neondatabase/serverless";
 import { logger } from "../lib/logger";
 
 const DAILY_STICKER_LIMIT = 12;
-const USER_TIME_ZONE = "Africa/Cairo";
 const connectionString = process.env["DATABASE_URL"];
 
 if (!connectionString) {
