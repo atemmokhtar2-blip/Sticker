@@ -287,14 +287,32 @@ async function startConnection(): Promise<void> {
     defaultQueryTimeoutMs: 60_000,
   });
 
-  // Baileys emits a QR string through connection.update when a fresh login is needed.
-  // Keep QR pairing as the single flow to avoid racing requestPairingCode() against QR generation.
+  // Request the WhatsApp 8-digit pairing code for the configured phone number.
+  // Baileys requires a fresh, unregistered session and an international-format number.
+
+  if (!state.creds.registered && phoneNumber) {
+    setTimeout(() => {
+      if (!sock || _status !== "connecting") return;
+      void sock.requestPairingCode(phoneNumber)
+        .then(async (code) => {
+          _linkingCode = code;
+          _qrCode = null;
+          _pairingError = null;
+          logger.info("WhatsApp 8-digit pairing code generated");
+          await persistBotStatus();
+        })
+        .catch(async (err) => {
+          _pairingError = err instanceof Error ? err.message : String(err);
+          logger.error({ err }, "Failed to generate WhatsApp pairing code");
+          await persistBotStatus();
+        });
+    }, 1500);
+  }
 
   sock.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect, qr } = update;
     if (qr) {
-      _qrCode = qr;
-      _linkingCode = null;
+      if (!_linkingCode) _qrCode = qr;
       _pairingError = null;
       logger.info("WhatsApp QR code is ready; open /api/bot/qr to display it");
       await persistBotStatus();
