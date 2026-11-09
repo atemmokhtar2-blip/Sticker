@@ -1,5 +1,6 @@
 import makeWASocket, {
   useMultiFileAuthState,
+  fetchLatestWaWebVersion,
   DisconnectReason,
   downloadMediaMessage,
   type WASocket,
@@ -273,7 +274,13 @@ async function startConnection(): Promise<void> {
   _pairingError = null;
   await persistBotStatus();
 
+  // Baileys rc13 bundles a stale WhatsApp Web version that WhatsApp rejects
+  // with 405. Fetch the live version from WhatsApp before opening the socket.
+  const { version } = await fetchLatestWaWebVersion();
+  logger.info({ version }, "Using live WhatsApp Web version");
+
   sock = makeWASocket({
+    version,
     auth: state,
     printQRInTerminal: false,
     logger: baileysLogger,
@@ -339,9 +346,10 @@ async function startConnection(): Promise<void> {
       }
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
       _status = "disconnected";
-      _linkingCode = null;
+      // Keep the last generated pairing code visible to the API until the next
+      // connection attempt replaces it. A transient socket close must not erase it.
       _qrCode = null;
-      logger.warn({ statusCode, shouldReconnect }, "WhatsApp connection closed");
+      logger.warn({ statusCode, shouldReconnect, disconnectMessage }, "WhatsApp connection closed");
       await persistBotStatus();
 
       if (shouldReconnect && !reconnecting) {
