@@ -353,3 +353,17 @@ async function startConnection(): Promise<void> {
 export async function startBot(): Promise<void> {
   await startConnection();
 }
+
+
+export async function stopBot(): Promise<void> {
+  if (sock) {
+    try { sock.end(new Error("WhatsApp daemon shutting down")); } catch (err) {
+      logger.warn({ err }, "Error closing WhatsApp socket");
+    }
+    sock = null;
+  }
+  _status = "disconnected";
+  _linkingCode = null;
+  _qrCode = null;
+  await persistBotStatus();
+}
