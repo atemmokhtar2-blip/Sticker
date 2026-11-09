@@ -8,7 +8,7 @@ const WATERMARK_TEXT = "01044568121";
  * Convert an image buffer to a WhatsApp sticker (WebP 512×512) with a watermark.
  */
 export async function convertToSticker(imageBuffer: Buffer): Promise<Buffer> {
-  const quality = parseInt(getSetting("sticker_quality") ?? "80", 10);
+  const quality = parseInt((await getSetting("sticker_quality")) ?? "80", 10);
 
   // Create an SVG for the watermark
   // Semi-transparent background (black with 0.4 opacity)
