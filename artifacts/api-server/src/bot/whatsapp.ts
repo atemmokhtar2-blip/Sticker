@@ -16,6 +16,7 @@ import {
   completeDailySticker,
   saveSessionToDb,
   getSessionFromDb,
+  clearSessionFromDb,
   ensureStickerUser,
   setStickerUserMode,
   reserveDailySticker,
@@ -313,7 +314,7 @@ async function startConnection(): Promise<void> {
           logger.error({ err }, "Failed to generate WhatsApp pairing code");
           await persistBotStatus();
         });
-    }, 1500);
+    }, 5000);
   }
 
   sock.ev.on("connection.update", async (update) => {
@@ -346,20 +347,34 @@ async function startConnection(): Promise<void> {
       }
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
       _status = "disconnected";
-      // Keep the last generated pairing code visible to the API until the next
-      // connection attempt replaces it. A transient socket close must not erase it.
       _qrCode = null;
+      if (!shouldReconnect) {
+        // A 401/logged-out response means the restored credentials are rejected.
+        // Remove only the invalid WhatsApp auth snapshot so a clean pairing can start.
+        _linkingCode = null;
+        _hasRegisteredSession = false;
+        _pairingError = "واتساب رفض بيانات الجلسة القديمة؛ جاري تجهيز جلسة ربط جديدة.";
+      }
       logger.warn({ statusCode, shouldReconnect, disconnectMessage }, "WhatsApp connection closed");
       await persistBotStatus();
 
-      if (shouldReconnect && !reconnecting) {
+      if (!reconnecting) {
         reconnecting = true;
-        setTimeout(() => {
-          reconnecting = false;
-          void startConnection().catch((err) => logger.error({ err }, "WhatsApp reconnect failed"));
+        setTimeout(async () => {
+          try {
+            if (!shouldReconnect) {
+              await clearSessionFromDb("main_session");
+              fs.rmSync(SESSIONS_DIR, { recursive: true, force: true });
+              fs.mkdirSync(SESSIONS_DIR, { recursive: true });
+              logger.warn("Rejected WhatsApp auth snapshot cleared; starting a fresh pairing session");
+            }
+            await startConnection();
+          } catch (err) {
+            logger.error({ err }, "WhatsApp reconnect failed");
+          } finally {
+            reconnecting = false;
+          }
         }, 5000);
-      } else if (!shouldReconnect) {
-        logger.error("WhatsApp logged out. Session retained for inspection; manual re-link is required.");
       }
     }
   });
