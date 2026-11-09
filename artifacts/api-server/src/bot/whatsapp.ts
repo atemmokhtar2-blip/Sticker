@@ -38,6 +38,7 @@ let _pairingError: string | null = null;
 let _hasRegisteredSession = false;
 let _lastDisconnectCode: number | null = null;
 let reconnecting = false;
+let pairingCodeTimer: NodeJS.Timeout | null = null;
 
 const processingMessages = new Set<string>();
 const processingUsers = new Set<string>();
@@ -299,22 +300,30 @@ async function startConnection(): Promise<void> {
   // Baileys requires a fresh, unregistered session and an international-format number.
 
   if (!state.creds.registered && phoneNumber) {
-    setTimeout(() => {
-      if (!sock || _status !== "connecting") return;
-      void sock.requestPairingCode(phoneNumber)
-        .then(async (code) => {
-          _linkingCode = code;
-          _qrCode = null;
-          _pairingError = null;
-          logger.info("WhatsApp 8-digit pairing code generated");
-          await persistBotStatus();
-        })
-        .catch(async (err) => {
-          _pairingError = err instanceof Error ? err.message : String(err);
-          logger.error({ err }, "Failed to generate WhatsApp pairing code");
-          await persistBotStatus();
-        });
-    }, 5000);
+    const requestPairingCode = async (): Promise<void> => {
+      if (!sock || _status !== "connecting" || state.creds.registered) return;
+      try {
+        // Pairing codes expire quickly; refresh before expiry until linking completes.
+        _linkingCode = null;
+        await persistBotStatus();
+        const code = await sock.requestPairingCode(phoneNumber);
+        _linkingCode = code;
+        _qrCode = null;
+        _pairingError = null;
+        logger.info("WhatsApp 8-digit pairing code generated");
+        await persistBotStatus();
+      } catch (err) {
+        _linkingCode = null;
+        _pairingError = err instanceof Error ? err.message : String(err);
+        logger.error({ err }, "Failed to generate WhatsApp pairing code");
+        await persistBotStatus();
+      } finally {
+        if (sock && _status === "connecting" && !state.creds.registered) {
+          pairingCodeTimer = setTimeout(() => void requestPairingCode(), 45_000);
+        }
+      }
+    };
+    pairingCodeTimer = setTimeout(() => void requestPairingCode(), 5000);
   }
 
   sock.ev.on("connection.update", async (update) => {
@@ -326,6 +335,8 @@ async function startConnection(): Promise<void> {
       await persistBotStatus();
     }
     if (connection === "open") {
+      if (pairingCodeTimer) clearTimeout(pairingCodeTimer);
+      pairingCodeTimer = null;
       _status = "connected";
       _linkingCode = null;
       _qrCode = null;
@@ -337,6 +348,8 @@ async function startConnection(): Promise<void> {
     }
 
     if (connection === "close") {
+      if (pairingCodeTimer) clearTimeout(pairingCodeTimer);
+      pairingCodeTimer = null;
       const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
       _lastDisconnectCode = statusCode ?? null;
       const disconnectMessage = lastDisconnect?.error?.message ?? "Unknown connection error";
