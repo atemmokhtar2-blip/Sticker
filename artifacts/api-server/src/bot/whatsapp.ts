@@ -5,7 +5,7 @@ import makeWASocket, {
   downloadMediaMessage,
   type WASocket,
   type WAMessage,
-} from "baileys";
+} from "@whiskeysockets/baileys";
 import { Boom } from "@hapi/boom";
 import path from "node:path";
 import pino from "pino";
