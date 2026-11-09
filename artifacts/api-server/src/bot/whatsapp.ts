@@ -19,6 +19,8 @@ import {
   setStickerUserMode,
   reserveDailySticker,
   releaseDailySticker,
+  saveBotRuntimeState,
+  getBotRuntimeState,
 } from "./settings";
 
 const SESSIONS_DIR = process.env["SESSIONS_DIR"] ?? path.resolve(process.cwd(), "sessions");
@@ -39,8 +41,24 @@ const processingMessages = new Set<string>();
 const processingUsers = new Set<string>();
 let activeConversions = 0;
 
-export function getBotStatus() {
-  return { status: _status, linkingCode: _linkingCode, qrCode: _qrCode, phone: _linkedPhone, pairingError: _pairingError, hasRegisteredSession: _hasRegisteredSession, lastDisconnectCode: _lastDisconnectCode };
+async function persistBotStatus(): Promise<void> {
+  try {
+    await saveBotRuntimeState({
+      status: _status,
+      linkingCode: _linkingCode,
+      qrCode: _qrCode,
+      phone: _linkedPhone,
+      pairingError: _pairingError,
+      hasRegisteredSession: _hasRegisteredSession,
+      lastDisconnectCode: _lastDisconnectCode,
+    });
+  } catch (err) {
+    logger.error({ err }, "Failed to persist WhatsApp runtime status");
+  }
+}
+
+export async function getBotStatus() {
+  return getBotRuntimeState();
 }
 
 async function sendText(jid: string, text: string, quotedMsg?: WAMessage): Promise<void> {
@@ -253,6 +271,7 @@ async function startConnection(): Promise<void> {
   _linkingCode = null;
   _qrCode = null;
   _pairingError = null;
+  await persistBotStatus();
 
   sock = makeWASocket({
     auth: state,
@@ -278,6 +297,7 @@ async function startConnection(): Promise<void> {
       _linkingCode = null;
       _pairingError = null;
       logger.info("WhatsApp QR code is ready; open /api/bot/qr to display it");
+      await persistBotStatus();
     }
     if (connection === "open") {
       _status = "connected";
@@ -287,6 +307,7 @@ async function startConnection(): Promise<void> {
       reconnecting = false;
       await backupSessionToDb();
       logger.info({ phone: phoneNumber }, "WhatsApp Sticker service connected");
+      await persistBotStatus();
     }
 
     if (connection === "close") {
@@ -303,6 +324,7 @@ async function startConnection(): Promise<void> {
       _linkingCode = null;
       _qrCode = null;
       logger.warn({ statusCode, shouldReconnect }, "WhatsApp connection closed");
+      await persistBotStatus();
 
       if (shouldReconnect && !reconnecting) {
         reconnecting = true;
