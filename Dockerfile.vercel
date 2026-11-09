@@ -12,8 +12,10 @@ COPY pnpm-lock.yaml package.json pnpm-workspace.yaml .npmrc ./
 COPY tsconfig.base.json tsconfig.json ./
 COPY artifacts/ artifacts/
 COPY lib/ lib/
+COPY scripts/ scripts/
 
-RUN pnpm install --no-frozen-lockfile
+RUN pnpm install --no-frozen-lockfile \
+    && node scripts/patch-baileys-pairing.mjs
 
 FROM deps AS builder
 WORKDIR /app
