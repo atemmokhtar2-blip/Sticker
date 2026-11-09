@@ -12,7 +12,7 @@ import { logger } from "../lib/logger";
 import fs from "node:fs";
 import { convertToSticker } from "./image";
 import {
-  getSetting,
+  completeDailySticker,
   saveSessionToDb,
   getSessionFromDb,
   ensureStickerUser,
@@ -82,7 +82,7 @@ async function sendWelcomeMenu(jid: string): Promise<void> {
 async function handleMenuChoice(jid: string, choice: string): Promise<boolean> {
   const normalized = choice.trim().toLowerCase();
   if (["contact_developer", "contact", "تواصل مع المطور", "تواصل", "1"].includes(normalized)) {
-    setStickerUserMode(jid, "contact");
+    await setStickerUserMode(jid, "contact");
     await sendText(
       jid,
       "👨‍💻 تم تحويل المحادثة لوضع التواصل مع المطور. ابعت رسالتك هنا، وهيتمكن المطور من متابعتها على نفس الرقم.\nللعودة لاستخدام البوت اكتب: استخدام البوت.",
@@ -90,7 +90,7 @@ async function handleMenuChoice(jid: string, choice: string): Promise<boolean> {
     return true;
   }
   if (["use_sticker_bot", "use", "استخدام البوت", "استخدم البوت", "2"].includes(normalized)) {
-    setStickerUserMode(jid, "active");
+    await setStickerUserMode(jid, "active");
     await sendText(
       jid,
       "🎨 تمام! البوت جاهز ليك.\n\n" +
@@ -114,7 +114,7 @@ async function backupSessionToDb(): Promise<void> {
       }
     }
     if (Object.keys(files).length > 0) {
-      saveSessionToDb("main_session", JSON.stringify(files));
+      await saveSessionToDb("main_session", JSON.stringify(files));
       logger.info({ fileCount: Object.keys(files).length }, "WhatsApp session snapshot saved");
     }
   } catch (err) {
@@ -133,9 +133,9 @@ async function processAndSendSticker(jid: string, msg: WAMessage): Promise<void>
   processingUsers.add(jid);
   activeConversions += 1;
 
-  let quota: ReturnType<typeof reserveDailySticker> | null = null;
+  let quota: Awaited<ReturnType<typeof reserveDailySticker>> | null = null;
   try {
-    quota = reserveDailySticker(jid);
+    quota = await reserveDailySticker(jid, msgId);
     if (!quota.allowed) {
       await sendText(jid, "⏳ وصلت للحد اليومي (" + DAILY_STICKER_LIMIT + " ستيكر).\nارجع بكرة وهتقدر تستخدم البوت من جديد.");
       return;
@@ -153,6 +153,7 @@ async function processAndSendSticker(jid: string, msg: WAMessage): Promise<void>
     if (!sock) throw new Error("WhatsApp connection is not ready");
 
     await sock.sendMessage(jid, { sticker: stickerBuffer });
+    await completeDailySticker(jid, msgId);
     logger.info({ jid, msgId, remaining: quota.remaining }, "Sticker delivered");
 
     if (quota.remaining === 0) {
@@ -161,7 +162,7 @@ async function processAndSendSticker(jid: string, msg: WAMessage): Promise<void>
       await sendText(jid, "✅ اتعمل الستيكر بنجاح!\nالمتبقي ليك النهارده: " + quota.remaining + " من " + DAILY_STICKER_LIMIT);
     }
   } catch (err) {
-    if (quota?.allowed) releaseDailySticker(jid);
+    if (quota?.allowed) await releaseDailySticker(jid, msgId);
     logger.error({ err, msgId, jid }, "Sticker conversion/delivery failed");
     await sendText(jid, "⚠️ مقدرتش أحوّل الصورة دي. جرّب صورة تانية، ومش هيتخصم من حدك اليومي.");
   } finally {
@@ -178,7 +179,7 @@ async function handleIncomingMessages(messages: WAMessage[]): Promise<void> {
     const content = msg.message;
     if (!content) continue;
 
-    const user = ensureStickerUser(jid);
+    const user = await ensureStickerUser(jid);
     if (user.isNew) {
       await sendWelcomeMenu(jid);
       continue;
@@ -193,7 +194,7 @@ async function handleIncomingMessages(messages: WAMessage[]): Promise<void> {
     const choice = buttonChoice || textMessage;
 
     if (choice.trim().toLowerCase() === "القائمة" || choice.trim().toLowerCase() === "menu") {
-      setStickerUserMode(jid, "awaiting_choice");
+      await setStickerUserMode(jid, "awaiting_choice");
       await sendWelcomeMenu(jid);
       continue;
     }
@@ -224,7 +225,7 @@ async function startConnection(): Promise<void> {
   if (!fs.existsSync(SESSIONS_DIR)) fs.mkdirSync(SESSIONS_DIR, { recursive: true });
 
   if (fs.readdirSync(SESSIONS_DIR).length === 0) {
-    const savedSession = getSessionFromDb("main_session");
+    const savedSession = await getSessionFromDb("main_session");
     if (savedSession) {
       try {
         const files = JSON.parse(savedSession) as Record<string, string>;
@@ -312,7 +313,6 @@ async function startConnection(): Promise<void> {
 
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;
-    await backupSessionToDb();
     await handleIncomingMessages(messages);
   });
 }
