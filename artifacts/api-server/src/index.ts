@@ -1,6 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { startBot } from "./bot/whatsapp";
+import { initDatabase } from "./bot/settings";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -42,6 +43,7 @@ app.listen(port, async (err) => {
 
   logger.info({ port }, "Server listening");
 
-  // Start WhatsApp bot
+  // Fail fast if Neon is not configured or its schema cannot be initialized.
+  await initDatabase();
   await startBot();
 });
