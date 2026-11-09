@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "pnpm --filter @workspace/api-server run typecheck && pnpm --filter @workspace/api-server run build",
+  "buildCommand": "pnpm run typecheck:libs && pnpm --filter @workspace/api-server run typecheck && pnpm --filter @workspace/api-server run build",
   "functions": {
     "api/index.ts": {
       "maxDuration": 300
