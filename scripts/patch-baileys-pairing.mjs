@@ -13,6 +13,82 @@ if (packageDirs.length === 0) {
   throw new Error("Expected @whiskeysockets/baileys 7.0.0-rc13 was not installed");
 }
 
+const replacement = `const requestPairingCode = async (phoneNumber, customPairingCode) => {
+    const pairingCode = customPairingCode ?? bytesToCrockford(randomBytes(5));
+
+    if (customPairingCode && customPairingCode.length !== 8) {
+      throw new Error('Custom pairing code must be exactly 8 chars');
+    }
+
+    authState.creds.pairingCode = pairingCode;
+    const jid = jidEncode(phoneNumber, 's.whatsapp.net');
+
+    try {
+      const result = await query({
+        tag: 'iq',
+        attrs: {
+          to: S_WHATSAPP_NET,
+          type: 'set',
+          xmlns: 'md'
+        },
+        content: [
+          {
+            tag: 'link_code_companion_reg',
+            attrs: {
+              jid,
+              stage: 'companion_hello',
+              should_show_push_notification: 'true'
+            },
+            content: [
+              {
+                tag: 'link_code_pairing_wrapped_companion_ephemeral_pub',
+                attrs: {},
+                content: await generatePairingKey()
+              },
+              {
+                tag: 'companion_server_auth_key_pub',
+                attrs: {},
+                content: authState.creds.noiseKey.public
+              },
+              {
+                tag: 'companion_platform_id',
+                attrs: {},
+                content: getCompanionPlatformId(browser)
+              },
+              {
+                tag: 'companion_platform_display',
+                attrs: {},
+                content: browser[1] + ' (' + browser[0] + ')'
+              },
+              {
+                tag: 'link_code_pairing_nonce',
+                attrs: {},
+                content: '0'
+              }
+            ]
+          }
+        ]
+      });
+
+      if (!result) {
+        throw new Boom('Timed out waiting for pairing code response', {
+          statusCode: DisconnectReason.timedOut
+        });
+      }
+    } catch (error) {
+      if (authState.creds.pairingCode === pairingCode) {
+        authState.creds.pairingCode = undefined;
+      }
+      throw error;
+    }
+
+    authState.creds.me = { id: jid, name: '~' };
+    ev.emit('creds.update', authState.creds);
+    return pairingCode;
+  };
+
+`;
+
 let patchedCount = 0;
 for (const packageDir of packageDirs) {
   const socketFile = path.join(
@@ -26,57 +102,44 @@ for (const packageDir of packageDirs) {
   const start = source.indexOf("const requestPairingCode = async");
   if (start < 0) throw new Error("Baileys requestPairingCode implementation was not found");
 
-  const endCandidates = [
-    source.indexOf("async function generatePairingKey", start),
-    source.indexOf("const sendWAMBuffer", start)
-  ].filter((index) => index > start);
-  const end = endCandidates.length ? Math.min(...endCandidates) : -1;
+  const end = source.indexOf("async function generatePairingKey", start);
   if (end < 0) throw new Error("Could not isolate Baileys pairing-code method");
 
   const method = source.slice(start, end);
-  const queryIndex = method.indexOf("await query({");
-  const meIndex = method.indexOf("authState.creds.me =");
-  const emitIndex = method.indexOf("ev.emit('creds.update', authState.creds);");
-  if (queryIndex >= 0 && meIndex > queryIndex && emitIndex > queryIndex) {
+  if (
+    method.includes("const jid = jidEncode(phoneNumber, 's.whatsapp.net')") &&
+    method.includes("await query({") &&
+    method.includes("authState.creds.me = { id: jid, name: '~' }")
+  ) {
     console.log("Baileys pairing acknowledgement patch is already present");
     continue;
   }
-  if (queryIndex < 0 && !method.includes("await sendNode({")) {
-    throw new Error("Expected fire-and-forget pairing IQ was not found; refusing unsafe patch");
+
+  if (!method.includes("await sendNode({") && !method.includes("await query({")) {
+    throw new Error("Unexpected Baileys pairing implementation; refusing unsafe patch");
   }
 
-  let patchedMethod = method.replace("await sendNode({", "await query({");
-  const earlyMeAssignment = /authState\.creds\.me\s*=\s*\{\s*id:\s*jidEncode\(phoneNumber,\s*['"]s\.whatsapp\.net['"]\),\s*name:\s*['"]~['"]\s*\};?\s*/;
-  if (!earlyMeAssignment.test(patchedMethod)) {
-    throw new Error("Could not safely locate the pre-acknowledgement device identity assignment");
-  }
-  patchedMethod = patchedMethod.replace(earlyMeAssignment, "");
-  patchedMethod = patchedMethod.replace("ev.emit('creds.update', authState.creds);", "");
-  const returnMarker = "return authState.creds.pairingCode;";
-  if (!patchedMethod.includes(returnMarker)) {
-    throw new Error("Could not locate pairing-code return point");
-  }
-  patchedMethod = patchedMethod.replace(
-    returnMarker,
-    "authState.creds.me = { id: jidEncode(phoneNumber, 's.whatsapp.net'), name: '~' };\n\t\tev.emit('creds.update', authState.creds);\n\t\treturn pairingCode;"
-  );
-  const patchedSource = source.slice(0, start) + patchedMethod + source.slice(end);
+  const patchedSource = source.slice(0, start) + replacement + source.slice(end);
   fs.writeFileSync(socketFile, patchedSource, "utf8");
   patchedCount += 1;
 }
 
-if (patchedCount === 0 && packageDirs.length > 0) {
-  // An already-patched package is valid; otherwise fail rather than silently
-  // shipping the old fire-and-forget pairing implementation.
-  const candidates = packageDirs.map((name) =>
-    path.join(pnpmStore, name, "node_modules/@whiskeysockets/baileys/lib/Socket/socket.js")
-  );
-  const verified = candidates.some((file) => {
+if (patchedCount === 0) {
+  const verified = packageDirs.some((packageDir) => {
+    const file = path.join(
+      pnpmStore,
+      packageDir,
+      "node_modules/@whiskeysockets/baileys/lib/Socket/socket.js"
+    );
     if (!fs.existsSync(file)) return false;
     const source = fs.readFileSync(file, "utf8");
     const start = source.indexOf("const requestPairingCode = async");
     const end = source.indexOf("async function generatePairingKey", start);
-    return start >= 0 && end > start && source.slice(start, end).includes("await query({");
+    if (start < 0 || end < 0) return false;
+    const method = source.slice(start, end);
+    return method.includes("const jid = jidEncode(phoneNumber, 's.whatsapp.net')") &&
+      method.includes("await query({") &&
+      method.includes("authState.creds.me = { id: jid, name: '~' }");
   });
   if (!verified) throw new Error("Baileys pairing acknowledgement patch was not applied");
 }
