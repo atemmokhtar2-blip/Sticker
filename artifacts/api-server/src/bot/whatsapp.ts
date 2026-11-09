@@ -33,6 +33,7 @@ let reconnecting = false;
 
 const processingMessages = new Set<string>();
 const processingUsers = new Set<string>();
+let activeConversions = 0;
 
 export function getBotStatus() {
   return { status: _status, linkingCode: _linkingCode, phone: _linkedPhone };
@@ -125,8 +126,13 @@ async function backupSessionToDb(): Promise<void> {
 async function processAndSendSticker(jid: string, msg: WAMessage): Promise<void> {
   const msgId = msg.key.id ?? `${jid}-${Date.now()}`;
   if (processingMessages.has(msgId) || processingUsers.has(jid)) return;
+  if (activeConversions >= 1) {
+    await sendText(jid, "⏳ فيه طلب بيتعالج حالياً. استنى لحظة وابعت الصورة تاني.");
+    return;
+  }
   processingMessages.add(msgId);
   processingUsers.add(jid);
+  activeConversions += 1;
 
   let quota: ReturnType<typeof reserveDailySticker> | null = null;
   try {
@@ -162,6 +168,7 @@ async function processAndSendSticker(jid: string, msg: WAMessage): Promise<void>
   } finally {
     processingMessages.delete(msgId);
     processingUsers.delete(jid);
+    activeConversions = Math.max(0, activeConversions - 1);
   }
 }
 
